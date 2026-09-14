@@ -3,10 +3,6 @@ import {
   BookOpen,
   Calculator,
   Scale,
-  FileCheck,
-  AlertCircle,
-  HelpCircle,
-  ChevronRight,
   ShieldAlert
 } from 'lucide-react';
 

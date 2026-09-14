@@ -2,15 +2,11 @@ import React, { useState } from 'react';
 import {
   CheckCircle2,
   AlertOctagon,
-  AlertTriangle,
   Download,
   FileText,
   ShieldCheck,
   ShieldAlert,
   Loader2,
-  HelpCircle,
-  Sparkles,
-  Search,
   Scale
 } from 'lucide-react';
 import { exportFormVPdf } from '../utils/exportPdf';
@@ -222,7 +218,6 @@ export default function AuditResults({
         {(auditData.rules || []).map((card) => {
           const isPass = card.status === 'pass';
           const isViolation = card.status === 'violation';
-          const isWarning = card.status === 'warning';
           const isSelected = selectedRuleId === card.id;
 
           // Localized Title

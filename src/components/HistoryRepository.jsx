@@ -1,55 +1,47 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   FolderArchive,
   Search,
-  Filter,
   Download,
   FileText,
   Trash2,
-  ExternalLink,
   ShieldAlert,
   ShieldCheck,
   Calendar,
-  Layers,
   Eye,
   CheckCircle2,
   XCircle,
   X,
-  AlertTriangle,
-  RotateCcw
+  AlertTriangle
 } from 'lucide-react';
 import { exportFormVPdf } from '../utils/exportPdf';
 
 export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en' }) {
-  const [inspections, setInspections] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterMode, setFilterMode] = useState('all'); // 'all' | 'violations' | 'compliant'
-  const [selectedAuditForModal, setSelectedAuditForModal] = useState(null);
-
-  // 1. Data Storage: Load from localStorage under 'metrology_inspections', initialize as empty array []
-  useEffect(() => {
+  // 1. Data Storage: Load directly and lazily from localStorage under 'metrology_inspections'
+  const [inspections, setInspections] = useState(() => {
     try {
       const stored = localStorage.getItem('metrology_inspections');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          setInspections(parsed);
-          return;
-        }
+        if (Array.isArray(parsed)) return parsed;
       }
-      localStorage.setItem('metrology_inspections', JSON.stringify([]));
-      setInspections([]);
+      return [];
     } catch (err) {
       console.error('Error accessing localStorage:', err);
-      setInspections([]);
+      return [];
     }
-  }, []);
+  });
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterMode, setFilterMode] = useState('all'); // 'all' | 'violations' | 'compliant'
+  const [selectedAuditForModal, setSelectedAuditForModal] = useState(null);
 
   // Save changes to localStorage helper
   const updateStorage = (data) => {
     setInspections(data);
     try {
       localStorage.setItem('metrology_inspections', JSON.stringify(data));
+      window.dispatchEvent(new Event('metrology_history_updated'));
     } catch (err) {
       console.error('Error writing to localStorage:', err);
     }

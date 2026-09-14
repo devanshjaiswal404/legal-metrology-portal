@@ -8,7 +8,6 @@ import {
   Sparkles,
   Loader2,
   FileImage,
-  Maximize2,
   AlertCircle,
   CheckCircle2,
   Ruler

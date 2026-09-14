@@ -3,13 +3,11 @@ import {
   UploadCloud,
   Camera,
   RotateCcw,
-  Sliders,
   ChevronDown,
   ChevronUp,
   Image as ImageIcon,
   CheckCircle2,
   AlertOctagon,
-  Ruler,
   Loader2,
   Sparkles
 } from 'lucide-react';
@@ -33,17 +31,18 @@ export default function ScanZone({
   const [cameraError, setCameraError] = useState(null);
   const [isAccordionOpen, setIsAccordionOpen] = useState(false);
   const [imageLoadError, setImageLoadError] = useState(false);
+  const [prevImageSrc, setPrevImageSrc] = useState(imageSrc);
+
+  if (prevImageSrc !== imageSrc) {
+    setPrevImageSrc(imageSrc);
+    setImageLoadError(false);
+  }
 
   // References
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
-
-  // Reset image load error when imageSrc changes
-  useEffect(() => {
-    setImageLoadError(false);
-  }, [imageSrc]);
 
   // Start Camera
   const startCamera = async () => {
@@ -174,6 +173,12 @@ export default function ScanZone({
                 <span>{t?.useCamera || 'Launch Optical Camera'}</span>
               </button>
             </div>
+
+            {cameraError && (
+              <p className="text-xs text-rose-400 bg-rose-950/40 border border-rose-900/50 px-3 py-1.5 rounded-lg max-w-sm">
+                {cameraError}
+              </p>
+            )}
 
             <span className="text-[11px] text-slate-500">
               {t?.uploadSubtitle || 'Supports high-resolution JPG, PNG, WEBP labels'}

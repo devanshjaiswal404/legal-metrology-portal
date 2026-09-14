@@ -43,21 +43,45 @@ export default function App() {
   // Synchronized selected box/rule ID
   const [selectedBoxId, setSelectedBoxId] = useState(null);
 
-  // History count tracker (starts at 0)
-  const [historyCount, setHistoryCount] = useState(0);
-
-  // Read history count from localStorage on mount
-  useEffect(() => {
+  // History count tracker (initialized lazily from localStorage)
+  const [historyCount, setHistoryCount] = useState(() => {
     try {
       const stored = localStorage.getItem('metrology_inspections');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) setHistoryCount(parsed.length);
+        if (Array.isArray(parsed)) return parsed.length;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
-  }, [auditData, activeTab]);
+    return 0;
+  });
+
+  // Sync history count via storage events (avoids cascading re-renders)
+  useEffect(() => {
+    const syncHistoryCount = () => {
+      try {
+        const stored = localStorage.getItem('metrology_inspections');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            setHistoryCount(parsed.length);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+      setHistoryCount(0);
+    };
+
+    window.addEventListener('storage', syncHistoryCount);
+    window.addEventListener('metrology_history_updated', syncHistoryCount);
+    return () => {
+      window.removeEventListener('storage', syncHistoryCount);
+      window.removeEventListener('metrology_history_updated', syncHistoryCount);
+    };
+  }, []);
 
   // User uploaded or captured a photo directly
   const handleUserImageSelected = (imageDataUrl, imageName) => {

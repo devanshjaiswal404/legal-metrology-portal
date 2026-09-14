@@ -3,18 +3,10 @@ import {
   CheckCircle2,
   AlertOctagon,
   AlertTriangle,
-  XCircle,
   Scale,
   Ruler,
   ShieldAlert,
   ShieldCheck,
-  FileText,
-  ChevronRight,
-  Filter,
-  Layers,
-  ArrowRight,
-  Info,
-  Download,
   Loader2
 } from 'lucide-react';
 import { exportFormVPdf } from '../utils/exportPdf';
@@ -89,7 +81,6 @@ export default function ComplianceScorecard({
 
   const passCount = rules.filter((r) => r.status === 'pass').length;
   const violationCount = rules.filter((r) => r.status === 'violation').length;
-  const warningCount = rules.filter((r) => r.status === 'warning').length;
 
   const isCompliant = violationCount === 0;
 

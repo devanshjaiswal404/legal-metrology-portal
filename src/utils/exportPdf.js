@@ -146,7 +146,7 @@ export function exportFormVPdf({
   doc.setTextColor(isCompliant ? 16 : 239, isCompliant ? 185 : 68, isCompliant ? 129 : 68);
   doc.text(`${score} / 100`, 147, currentY + 13);
 
-  // Row 3 Metadata: Verdict
+  // Row 3 Metadata: Verdict & Prescribed Font Height
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(51, 65, 85);
   doc.text('Overall Verdict:', 18, currentY + 20);
@@ -157,6 +157,13 @@ export function exportFormVPdf({
     doc.setTextColor(220, 38, 38);
   }
   doc.text(overallVerdict, 48, currentY + 20);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(51, 65, 85);
+  doc.text('Prescribed Font Ht:', 110, currentY + 20);
+  doc.setFont('courier', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(minNumeralHeight, 147, currentY + 20);
 
   currentY += 28;
 

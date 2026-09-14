@@ -2,12 +2,9 @@ import React from 'react';
 import {
   Scale,
   ClipboardList,
-  ShieldCheck,
   Camera,
   Globe,
-  FolderArchive,
-  BarChart3,
-  Languages
+  BarChart3
 } from 'lucide-react';
 
 export default function Header({

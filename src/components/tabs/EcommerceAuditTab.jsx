@@ -2,15 +2,10 @@ import React, { useState } from 'react';
 import {
   Globe,
   Search,
-  ExternalLink,
   ShieldAlert,
   CheckCircle2,
   AlertTriangle,
   XCircle,
-  TrendingDown,
-  Building2,
-  Calendar,
-  IndianRupee,
   Layers
 } from 'lucide-react';
 
@@ -205,7 +200,6 @@ export default function EcommerceAuditTab() {
               {sampleAudits.map((item) => {
                 const isPass = item.status === 'pass';
                 const isWarning = item.status === 'warning';
-                const isViolation = item.status === 'violation';
 
                 return (
                   <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">

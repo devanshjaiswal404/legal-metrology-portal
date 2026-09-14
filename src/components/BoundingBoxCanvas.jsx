@@ -1,13 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
-  Filter,
   Eye,
   CheckCircle2,
   AlertOctagon,
-  AlertTriangle,
-  ZoomIn,
-  Maximize2,
-  ShieldAlert,
   Info
 } from 'lucide-react';
 

@@ -1,16 +1,4 @@
 import React, { useState } from 'react';
-import {
-  FileCheck2,
-  Cpu,
-  RefreshCw,
-  Eye,
-  Sliders,
-  Sparkles,
-  Scale,
-  ShieldAlert,
-  Layers,
-  ChevronRight
-} from 'lucide-react';
 import InputScanner from '../InputScanner';
 import BoundingBoxCanvas, { DEFAULT_MOCK_BOXES } from '../BoundingBoxCanvas';
 import ComplianceScorecard, { DEFAULT_STATUTORY_RULES } from '../ComplianceScorecard';
@@ -21,7 +9,7 @@ export default function LiveInspectionTab() {
   const [selectedRuleId, setSelectedRuleId] = useState('rule-6-1-c'); // Default highlighted violation
   const [score, setScore] = useState(68);
   const [minNumeralHeight, setMinNumeralHeight] = useState('2.5 mm');
-  const [statutoryRules, setStatutoryRules] = useState(DEFAULT_STATUTORY_RULES);
+  const [statutoryRules] = useState(DEFAULT_STATUTORY_RULES);
 
   // Handler when officer triggers "Run Statutory Audit" from InputScanner
   const handleRunAudit = (auditPayload) => {

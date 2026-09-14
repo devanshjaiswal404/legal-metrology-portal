@@ -1,40 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   BarChart3,
   TrendingUp,
   AlertOctagon,
-  ShieldCheck,
   FileCheck2,
   PieChart,
   Scale,
   Calendar,
   AlertTriangle,
-  ArrowUpRight,
-  Sparkles,
   ShieldAlert,
   Inbox
 } from 'lucide-react';
 
 export default function AnalyticsDashboard({ t, lang = 'en' }) {
-  const [inspections, setInspections] = useState([]);
-
-  useEffect(() => {
+  const [inspections] = useState(() => {
     try {
       const stored = localStorage.getItem('metrology_inspections');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          setInspections(parsed);
-        }
+        if (Array.isArray(parsed)) return parsed;
       }
+      return [];
     } catch (e) {
       console.error(e);
+      return [];
     }
-  }, []);
+  });
 
   const totalInspections = inspections.length;
   const violationAudits = inspections.filter((i) => i.verdict === 'violation' || i.verdict === 'NON-COMPLIANT');
-  const compliantAudits = inspections.filter((i) => i.verdict === 'pass' || i.verdict === 'COMPLIANT');
   const nonComplianceRate = totalInspections > 0 ? ((violationAudits.length / totalInspections) * 100).toFixed(1) + '%' : '0%';
   const totalNoticesIssued = violationAudits.length;
 

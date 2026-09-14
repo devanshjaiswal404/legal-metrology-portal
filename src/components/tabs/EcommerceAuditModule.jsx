@@ -6,14 +6,8 @@ import {
   CheckCircle2,
   AlertOctagon,
   FileText,
-  ExternalLink,
   ShieldAlert,
-  ShieldCheck,
-  Building2,
-  Info,
-  Sparkles,
-  ArrowRight,
-  RotateCcw
+  Info
 } from 'lucide-react';
 import { exportFormVPdf } from '../../utils/exportPdf';
 
