@@ -11,14 +11,18 @@ import {
 } from 'lucide-react';
 import { exportFormVPdf } from '../utils/exportPdf';
 import { exportAuditDataCsv } from '../utils/exportCsv';
+import AnimatedNumber from './AnimatedNumber';
 
 export default function AuditResults({
   auditData,
   selectedRuleId,
   onSelectRule,
+  hoveredBoxId,
+  onHoverBox,
   isAnalyzing = false,
   t,
-  lang = 'en'
+  lang = 'en',
+  onTriggerToast
 }) {
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -110,6 +114,12 @@ export default function AuditResults({
         inspectorId: auditData.inspectorId || 'LMO-Central-04',
         memoRef: auditData.memoRef || 'LMO/2026/8842'
       });
+      if (onTriggerToast) {
+        onTriggerToast(
+          lang === 'hi' ? 'प्रपत्र V वैधानिक नोटिस (PDF) तैयार किया गया' : 'Official Form V Statutory Notice (PDF) generated',
+          '📄'
+        );
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -154,17 +164,19 @@ export default function AuditResults({
             </p>
           </div>
 
-          {/* Score Pill */}
+          {/* Score Pill with Animated Number Counter */}
           <div className="flex items-center self-start sm:self-auto">
             <div
-              className={`px-3.5 py-1.5 rounded-lg font-mono font-bold text-xs sm:text-sm border shadow-sm flex items-center gap-2 ${
+              className={`px-3.5 py-1.5 rounded-lg font-mono font-bold text-xs sm:text-sm border shadow-sm flex items-center gap-2 transition-all hover:scale-105 ${
                 isCompliant
                   ? 'bg-slate-900 text-emerald-300 border-emerald-800/50'
                   : 'bg-slate-900 text-rose-300 border-rose-800/50'
               }`}
             >
               <span className="text-slate-400 font-sans font-normal">{t?.score || 'Compliance Score'}:</span>
-              <span className="text-sm sm:text-base font-bold text-white">{auditData.score}/100</span>
+              <span className="text-sm sm:text-base font-bold text-white">
+                <AnimatedNumber value={auditData.score || 0} />/100
+              </span>
             </div>
           </div>
         </div>
@@ -186,7 +198,7 @@ export default function AuditResults({
             type="button"
             onClick={handleDownloadPdf}
             disabled={isDownloading}
-            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-slate-100 hover:bg-white text-slate-900 font-semibold text-xs sm:text-sm shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-slate-100 hover:bg-white text-slate-900 font-semibold text-xs sm:text-sm shadow-sm hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
           >
             {isDownloading ? (
               <>
@@ -203,8 +215,16 @@ export default function AuditResults({
 
           <button
             type="button"
-            onClick={() => exportAuditDataCsv(auditData)}
-            className="w-full sm:w-auto px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white font-medium text-xs sm:text-sm border border-slate-700/80 shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            onClick={() => {
+              exportAuditDataCsv(auditData);
+              if (onTriggerToast) {
+                onTriggerToast(
+                  lang === 'hi' ? 'ऑडिट लेजर सीएसवी डाउनलोड किया गया' : 'Audit Ledger (CSV) exported',
+                  '📊'
+                );
+              }
+            }}
+            className="w-full sm:w-auto px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white font-medium text-xs sm:text-sm border border-slate-700/80 shadow-sm hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
             title="Download audit findings as a CSV spreadsheet"
           >
             <Download className="w-3.5 h-3.5 text-slate-400" />
@@ -219,6 +239,7 @@ export default function AuditResults({
           const isPass = card.status === 'pass';
           const isViolation = card.status === 'violation';
           const isSelected = selectedRuleId === card.id;
+          const isHovered = hoveredBoxId === card.id;
 
           // Localized Title
           let localizedTitle = card.title;
@@ -235,11 +256,17 @@ export default function AuditResults({
             <div
               key={card.id}
               onClick={() => onSelectRule && onSelectRule(card.id)}
-              className={`p-3.5 sm:p-4 rounded-xl border transition-all cursor-pointer bg-[#111827] ${
+              onMouseEnter={() => onHoverBox && onHoverBox(card.id)}
+              onMouseLeave={() => onHoverBox && onHoverBox(null)}
+              className={`p-3.5 sm:p-4 rounded-xl border transition-all duration-200 cursor-pointer bg-[#111827] hover:scale-[1.01] hover:border-slate-600 hover:shadow-lg ${
                 isSelected
                   ? isViolation
-                    ? 'border-rose-500/80 ring-1 ring-rose-500/50 bg-rose-950/10'
-                    : 'border-emerald-500/80 ring-1 ring-emerald-500/50 bg-emerald-950/10'
+                    ? 'border-rose-500/80 ring-1.5 ring-rose-500/50 bg-rose-950/20 scale-[1.01] shadow-lg'
+                    : 'border-emerald-500/80 ring-1.5 ring-emerald-500/50 bg-emerald-950/20 scale-[1.01] shadow-lg'
+                  : isHovered
+                  ? isViolation
+                    ? 'border-rose-500 ring-2 ring-rose-500/40 bg-rose-950/20 scale-[1.01] shadow-lg'
+                    : 'border-emerald-500 ring-2 ring-emerald-500/40 bg-emerald-950/20 scale-[1.01] shadow-lg'
                   : isPass
                   ? 'border-slate-800/80 hover:border-slate-700'
                   : 'border-rose-900/50 hover:border-rose-800 bg-rose-950/5'

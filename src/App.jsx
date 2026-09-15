@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import ScanZone from './components/ScanZone';
 import AuditResults from './components/AuditResults';
@@ -18,6 +18,18 @@ export default function App() {
     }
   });
 
+  // Dynamic Toast Notification System
+  const [toast, setToast] = useState(null);
+  const toastTimeoutRef = useRef(null);
+
+  const showToast = (message, icon = '✓') => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToast({ message, icon });
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+    }, 3000);
+  };
+
   const handleToggleLang = (newLang) => {
     setLang(newLang);
     try {
@@ -25,6 +37,7 @@ export default function App() {
     } catch {
       // ignore
     }
+    showToast(newLang === 'hi' ? 'भाषा बदलकर हिन्दी कर दी गई' : 'Language switched to English', '🌐');
   };
 
   const t = translations[lang] || translations.en;
@@ -40,8 +53,9 @@ export default function App() {
   const [packageWidth, setPackageWidth] = useState(10.0);
   const [pdpArea, setPdpArea] = useState(150.0);
 
-  // Synchronized selected box/rule ID
+  // Synchronized selected & hovered box/rule IDs for two-way reactivity
   const [selectedBoxId, setSelectedBoxId] = useState(null);
+  const [hoveredBoxId, setHoveredBoxId] = useState(null);
 
   // History count tracker (initialized lazily from localStorage)
   const [historyCount, setHistoryCount] = useState(() => {
@@ -215,6 +229,10 @@ export default function App() {
       setAuditData(newRecord);
       setSelectedBoxId('net-qty');
       setIsAnalyzing(false);
+      showToast(
+        lang === 'hi' ? 'नमूना लोड किया गया — वैधानिक जांच पूर्ण' : 'Packaging specimen loaded — Statutory audit complete',
+        '📸'
+      );
 
       // Persist to localStorage 'metrology_inspections'
       try {
@@ -241,6 +259,7 @@ export default function App() {
   const handleResetImage = () => {
     setAuditData(null);
     setSelectedBoxId(null);
+    setHoveredBoxId(null);
     setIsAnalyzing(false);
   };
 
@@ -252,7 +271,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#090d16] text-slate-100 antialiased selection:bg-slate-700 selection:text-white font-sans">
+    <div className="min-h-screen flex flex-col bg-[#090d16] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0f1d] to-[#080c16] text-slate-100 antialiased selection:bg-emerald-500/20 selection:text-emerald-300 font-sans relative">
       {/* 1. Header with Navigation Tabs & Language Toggle */}
       <Header
         activeTab={activeTab}
@@ -263,11 +282,11 @@ export default function App() {
         t={t}
       />
 
-      {/* 2. Main Content Router */}
+      {/* 2. Main Content Router with Smooth Tab Transitions */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Tab 1: Physical Package Scanner (Clean 2-column production layout) */}
         {activeTab === 'scanner' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+          <div key="scanner" className="animate-fade-slide grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
             {/* Left Column (Scan Zone): 5 cols on lg */}
             <section className="lg:col-span-5 space-y-4">
               <ScanZone
@@ -281,6 +300,8 @@ export default function App() {
                 onResetImage={handleResetImage}
                 selectedBoxId={selectedBoxId}
                 onSelectBox={(id) => setSelectedBoxId(id)}
+                hoveredBoxId={hoveredBoxId}
+                onHoverBox={setHoveredBoxId}
                 isAnalyzing={isAnalyzing}
                 t={t.scanner}
                 lang={lang}
@@ -293,9 +314,12 @@ export default function App() {
                 auditData={auditData}
                 selectedRuleId={selectedBoxId}
                 onSelectRule={(id) => setSelectedBoxId(id)}
+                hoveredBoxId={hoveredBoxId}
+                onHoverBox={setHoveredBoxId}
                 isAnalyzing={isAnalyzing}
                 t={t.scanner}
                 lang={lang}
+                onTriggerToast={showToast}
               />
             </section>
           </div>
@@ -303,19 +327,35 @@ export default function App() {
 
         {/* Tab 2: E-Commerce Listing Audit (Rule 6(10) Crawler & Exemption Note) */}
         {activeTab === 'ecommerce' && (
-          <EcommerceAuditModule t={t.ecommerce} lang={lang} />
+          <div key="ecommerce" className="animate-fade-slide">
+            <EcommerceAuditModule t={t.ecommerce} lang={lang} onTriggerToast={showToast} />
+          </div>
         )}
 
         {/* Tab 3: Inspection Repository (History with Thumbnails & Memos) */}
         {activeTab === 'repository' && (
-          <HistoryRepository onViewAudit={handleViewHistoricalAudit} t={t.repository} lang={lang} />
+          <div key="repository" className="animate-fade-slide">
+            <HistoryRepository onViewAudit={handleViewHistoricalAudit} t={t.repository} lang={lang} />
+          </div>
         )}
 
         {/* Tab 4: Enforcement Analytics Dashboard (KPIs & Charts) */}
         {activeTab === 'analytics' && (
-          <AnalyticsDashboard t={t.analytics} lang={lang} />
+          <div key="analytics" className="animate-fade-slide">
+            <AnalyticsDashboard t={t.analytics} lang={lang} />
+          </div>
         )}
       </main>
+
+      {/* Dynamic Toast Notification Alert (Bottom-Right Pill) */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-toast pointer-events-none">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-slate-900/95 backdrop-blur-md border border-slate-700/90 text-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.6)] text-xs font-medium">
+            <span className="text-base">{toast.icon}</span>
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
 
       {/* Clean Minimal Footer */}
       <Footer t={t} lang={lang} />

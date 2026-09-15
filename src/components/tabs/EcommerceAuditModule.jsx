@@ -13,7 +13,7 @@ import { exportFormVPdf } from '../../utils/exportPdf';
 
 
 
-export default function EcommerceAuditModule({ t, lang = 'en' }) {
+export default function EcommerceAuditModule({ t, lang = 'en', onTriggerToast }) {
   const [inputUrl, setInputUrl] = useState('');
   const [uploadedScreenshot, setUploadedScreenshot] = useState(null);
   const [activeAudit, setActiveAudit] = useState(null);
@@ -100,6 +100,12 @@ export default function EcommerceAuditModule({ t, lang = 'en' }) {
     reader.onload = (ev) => {
       setUploadedScreenshot(ev.target.result);
       if (!inputUrl) setInputUrl('Product-Listing-Screenshot-Scan');
+      if (onTriggerToast) {
+        onTriggerToast(
+          lang === 'hi' ? 'ई-कॉमर्स स्क्रीनशॉट सफलतापूर्वक संलग्न किया गया' : 'Marketplace listing screenshot attached',
+          '📸'
+        );
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -122,6 +128,12 @@ export default function EcommerceAuditModule({ t, lang = 'en' }) {
       inspectorId: 'LMO-Central-04',
       memoRef: `ECOM/2026/${Math.floor(1000 + Math.random() * 9000)}`
     });
+    if (onTriggerToast) {
+      onTriggerToast(
+        lang === 'hi' ? 'ई-कॉमर्स कारण बताओ नोटिस (PDF) तैयार किया गया' : 'Rule 6(10) Show-Cause Notice (PDF) drafted',
+        '📄'
+      );
+    }
   };
 
   return (

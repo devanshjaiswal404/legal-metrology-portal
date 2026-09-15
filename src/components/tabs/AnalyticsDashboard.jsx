@@ -11,6 +11,7 @@ import {
   ShieldAlert,
   Inbox
 } from 'lucide-react';
+import AnimatedNumber from '../AnimatedNumber';
 
 export default function AnalyticsDashboard({ t, lang = 'en' }) {
   const [inspections] = useState(() => {
@@ -37,6 +38,7 @@ export default function AnalyticsDashboard({ t, lang = 'en' }) {
     {
       title: t?.totalScans || 'Total Inspections',
       value: String(totalInspections),
+      numericValue: totalInspections,
       badge: totalInspections > 0 ? `${totalInspections} ${lang === 'hi' ? 'दर्ज' : 'logged'}` : (lang === 'hi' ? '0 दर्ज' : '0 logged'),
       badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
       icon: Scale,
@@ -45,6 +47,8 @@ export default function AnalyticsDashboard({ t, lang = 'en' }) {
     {
       title: t?.contraventionRate || 'Contravention Rate',
       value: nonComplianceRate,
+      numericValue: totalInspections > 0 ? parseFloat(nonComplianceRate) : 0,
+      isPercent: true,
       badge: `${violationAudits.length} ${lang === 'hi' ? 'उल्लंघन चिह्नित' : 'violations flagged'}`,
       badgeColor: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
       icon: AlertOctagon,
@@ -61,6 +65,7 @@ export default function AnalyticsDashboard({ t, lang = 'en' }) {
     {
       title: t?.noticesIssued || 'Form V Notices Served',
       value: String(totalNoticesIssued),
+      numericValue: totalNoticesIssued,
       badge: `${totalNoticesIssued} ${lang === 'hi' ? 'प्रपत्र V मेमो' : 'Form V Memos'}`,
       badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
       icon: FileCheck2,
@@ -122,7 +127,7 @@ export default function AnalyticsDashboard({ t, lang = 'en' }) {
           return (
             <div
               key={idx}
-              className="bg-[#111827] border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col justify-between space-y-3"
+              className="bg-[#111827] border border-slate-800 rounded-xl p-5 shadow-sm hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 flex flex-col justify-between space-y-3"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-slate-400">{metric.title}</span>
@@ -132,8 +137,16 @@ export default function AnalyticsDashboard({ t, lang = 'en' }) {
               </div>
 
               <div>
-                <div className="text-2xl sm:text-3xl font-bold text-slate-100 tracking-tight">
-                  {metric.value}
+                <div className="text-2xl sm:text-3xl font-bold text-slate-100 tracking-tight font-mono">
+                  {metric.numericValue !== undefined ? (
+                    <AnimatedNumber
+                      value={metric.numericValue}
+                      decimals={metric.isPercent ? 1 : 0}
+                      suffix={metric.isPercent ? '%' : ''}
+                    />
+                  ) : (
+                    metric.value
+                  )}
                 </div>
                 <div className="mt-1 flex items-center gap-1.5">
                   <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold border ${metric.badgeColor}`}>

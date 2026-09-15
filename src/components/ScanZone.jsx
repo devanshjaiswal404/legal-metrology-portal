@@ -23,6 +23,8 @@ export default function ScanZone({
   onResetImage,
   selectedBoxId,
   onSelectBox,
+  hoveredBoxId,
+  onHoverBox,
   isAnalyzing = false,
   t,
   lang = 'en'
@@ -236,18 +238,27 @@ export default function ScanZone({
 
             {/* Visual Container: object-contain inside clean container with rounded-xl border */}
             <div className="flex justify-center items-center w-full overflow-hidden p-1">
-              <div className="relative inline-block rounded-lg overflow-hidden border border-slate-800 bg-black/40 shadow-sm">
+              <div className="relative inline-block rounded-xl overflow-hidden border border-slate-800 bg-black/40 shadow-2xl group">
                 <img
                   src={imageLoadError ? fallbackSvg : imageSrc}
                   alt="Scanned Commodity Packaging"
                   onError={() => setImageLoadError(true)}
-                  className="block max-h-[460px] w-auto max-w-full object-contain rounded-lg select-none"
+                  className="block max-h-[460px] w-auto max-w-full object-contain rounded-xl select-none"
                 />
+
+                {/* Corner Crosshairs / Reticles */}
+                <div className="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-emerald-400/80 z-20 pointer-events-none rounded-tl-sm shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                <div className="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-emerald-400/80 z-20 pointer-events-none rounded-tr-sm shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                <div className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-emerald-400/80 z-20 pointer-events-none rounded-bl-sm shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                <div className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-emerald-400/80 z-20 pointer-events-none rounded-br-sm shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+
+                {/* Optical Laser Scanning Beam Animation */}
+                <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_15px_#10b981] z-20 pointer-events-none animate-laser-scan" />
 
                 {/* Analysis In-Progress Scanner Overlay */}
                 {isAnalyzing && (
-                  <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-30">
-                    <div className="w-11 h-11 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200">
+                  <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-30 animate-fade-slide">
+                    <div className="w-11 h-11 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 shadow-lg">
                       <Loader2 className="w-5 h-5 animate-spin" />
                     </div>
                     <div className="mt-3.5 space-y-1">
@@ -264,10 +275,11 @@ export default function ScanZone({
                   </div>
                 )}
 
-                {/* Scaled Responsive Bounding Boxes (Precise 1.5px Lines + Matte Fills) */}
+                {/* Scaled Responsive Bounding Boxes with Two-Way Synchronized Hover */}
                 {!isAnalyzing && boxes.map((box) => {
                   const isPass = box.status === 'pass';
                   const isSelected = selectedBoxId === box.id;
+                  const isHovered = hoveredBoxId === box.id;
 
                   // Localized badge text if Hindi
                   let displayBadge = box.badgeText;
@@ -288,28 +300,36 @@ export default function ScanZone({
                         top: `${box.y}%`,
                         width: `${box.width}%`,
                         height: `${box.height}%`,
-                        borderWidth: '1.5px',
-                        backgroundColor: isPass ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.14)'
+                        borderWidth: isHovered || isSelected ? '2.5px' : '1.5px',
+                        backgroundColor: isPass 
+                          ? (isHovered || isSelected ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.12)') 
+                          : (isHovered || isSelected ? 'rgba(244, 63, 94, 0.24)' : 'rgba(244, 63, 94, 0.14)')
                       }}
                       onClick={() => onSelectBox && onSelectBox(box.id)}
-                      className={`rounded-sm cursor-pointer transition-all duration-100 z-10 ${
+                      onMouseEnter={() => onHoverBox && onHoverBox(box.id)}
+                      onMouseLeave={() => onHoverBox && onHoverBox(null)}
+                      className={`rounded-sm cursor-pointer transition-all duration-200 z-10 ${
                         isPass
-                          ? 'border-emerald-500/80'
-                          : 'border-rose-500/90'
+                          ? 'border-emerald-500/90'
+                          : 'border-rose-500/95'
                       } ${
-                        isSelected
-                          ? 'ring-1.5 ring-white/90 shadow-sm'
-                          : 'hover:opacity-90'
+                        isHovered
+                          ? isPass
+                            ? 'scale-[1.02] ring-2 ring-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.7)]'
+                            : 'scale-[1.02] ring-2 ring-rose-400 shadow-[0_0_18px_rgba(244,63,94,0.7)]'
+                          : isSelected
+                          ? 'ring-2 ring-white/90 shadow-md scale-[1.01]'
+                          : 'hover:opacity-95'
                       }`}
                     >
                       {/* Floating Tag sitting directly on top */}
-                      <div className="absolute -top-5 left-0 whitespace-nowrap z-20 pointer-events-none">
+                      <div className="absolute -top-5 left-0 whitespace-nowrap z-20 pointer-events-none transition-transform duration-200">
                         <span
-                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-mono font-medium tracking-tight shadow-sm border ${
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-mono font-medium tracking-tight shadow-md border ${
                             isPass
-                              ? 'bg-slate-900/95 text-emerald-300 border-emerald-800/60'
-                              : 'bg-slate-900/95 text-rose-300 border-rose-800/60'
-                          }`}
+                              ? 'bg-slate-900/95 text-emerald-300 border-emerald-800/80'
+                              : 'bg-slate-900/95 text-rose-300 border-rose-800/80'
+                          } ${isHovered ? 'scale-105' : ''}`}
                         >
                           {isPass ? (
                             <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
