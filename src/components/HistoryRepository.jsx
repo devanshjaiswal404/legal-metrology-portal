@@ -69,6 +69,18 @@ export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en'
     });
   };
 
+  // Helper function for dynamic compliance resolution
+  const checkIsCompliant = (record) => {
+    if (!record) return false;
+    return (
+      record.status === 'COMPLIANT' ||
+      record.verdict === 'COMPLIANT' ||
+      record.verdict === 'pass' ||
+      record.score === 100 ||
+      (record.contraventionCount ?? record.violationsCount ?? 0) === 0
+    );
+  };
+
   // Filter and Search Logic
   const filteredAudits = inspections.filter((item) => {
     const matchesSearch =
@@ -78,18 +90,20 @@ export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en'
 
     if (!matchesSearch) return false;
 
+    const isCompliant = checkIsCompliant(item);
+
     if (filterMode === 'violations') {
-      return item.verdict === 'NON-COMPLIANT' || item.verdict === 'violation';
+      return !isCompliant;
     }
     if (filterMode === 'compliant') {
-      return item.verdict === 'COMPLIANT' || item.verdict === 'pass';
+      return isCompliant;
     }
     return true;
   });
 
   const totalCount = inspections.length;
-  const compliantCount = inspections.filter((i) => i.verdict === 'COMPLIANT' || i.verdict === 'pass').length;
-  const violationCount = inspections.filter((i) => i.verdict === 'NON-COMPLIANT' || i.verdict === 'violation').length;
+  const compliantCount = inspections.filter((i) => checkIsCompliant(i)).length;
+  const violationCount = inspections.filter((i) => !checkIsCompliant(i)).length;
 
   return (
     <div className="space-y-6">
@@ -236,8 +250,9 @@ export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en'
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {filteredAudits.map((item) => {
-                  const isPass = item.verdict === 'COMPLIANT' || item.verdict === 'pass';
-                  const thumbnail = item.image || (isPass ? 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=200&auto=format&fit=crop' : 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=200&auto=format&fit=crop');
+                  const isCompliant = checkIsCompliant(item);
+                  const isPass = isCompliant;
+                  const thumbnail = item.image || (isCompliant ? 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=200&auto=format&fit=crop' : 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=200&auto=format&fit=crop');
 
                   return (
                     <tr key={item.id || item.memoRef} className="hover:bg-slate-800/30 transition-colors">
@@ -283,18 +298,18 @@ export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en'
                       <td className="px-4 py-3.5 text-center whitespace-nowrap">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-mono font-semibold border tracking-wider uppercase ${
-                            isPass
+                            isCompliant
                               ? 'bg-emerald-950/30 text-emerald-300 border-emerald-800/50'
                               : 'bg-rose-950/30 text-rose-300 border-rose-800/50'
                           }`}
                         >
-                          {isPass ? (
+                          {isCompliant ? (
                             <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                           ) : (
                             <XCircle className="w-3 h-3 text-rose-400" />
                           )}
                           <span>
-                            {isPass ? (lang === 'hi' ? 'अनुपालित' : 'COMPLIANT') : (lang === 'hi' ? 'उल्लंघन' : 'VIOLATION')}
+                            {isCompliant ? (lang === 'hi' ? 'अनुपालित' : 'COMPLIANT') : (lang === 'hi' ? 'उल्लंघन' : 'VIOLATION')}
                           </span>
                         </span>
                       </td>
@@ -303,7 +318,7 @@ export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en'
                       <td className="px-4 py-3.5 text-center whitespace-nowrap">
                         <span
                           className={`font-mono font-semibold text-xs ${
-                            isPass ? 'text-emerald-400' : 'text-rose-400'
+                            isCompliant ? 'text-emerald-400' : 'text-rose-400'
                           }`}
                         >
                           {item.score}/100
@@ -358,15 +373,20 @@ export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en'
                     <h3 className="text-sm sm:text-base font-semibold text-slate-100">
                       {lang === 'hi' ? 'वैधानिक निरीक्षण डोजियर' : 'Statutory Inspection Dossier'}: {selectedAuditForModal.memoRef}
                     </h3>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold border ${
-                        selectedAuditForModal.verdict === 'COMPLIANT' || selectedAuditForModal.verdict === 'pass'
-                          ? 'bg-emerald-950/30 text-emerald-300 border-emerald-800/50'
-                          : 'bg-rose-950/30 text-rose-300 border-rose-800/50'
-                      }`}
-                    >
-                      {selectedAuditForModal.verdict}
-                    </span>
+                    {(() => {
+                      const isModalCompliant = checkIsCompliant(selectedAuditForModal);
+                      return (
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold border ${
+                            isModalCompliant
+                              ? 'bg-emerald-950/30 text-emerald-300 border-emerald-800/50'
+                              : 'bg-rose-950/30 text-rose-300 border-rose-800/50'
+                          }`}
+                        >
+                          {isModalCompliant ? (lang === 'hi' ? 'अनुपालित' : 'COMPLIANT') : (lang === 'hi' ? 'उल्लंघन' : 'VIOLATION')}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <p className="text-xs text-slate-400 font-mono">
                     {selectedAuditForModal.timestamp} • {lang === 'hi' ? 'निरीक्षक' : 'Inspector'}: {selectedAuditForModal.inspectorId || 'LMO-Central-04'}
@@ -393,7 +413,12 @@ export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en'
                 <div className="text-sm font-semibold text-slate-100">{selectedAuditForModal.commodity}</div>
                 <div className="text-slate-400">{selectedAuditForModal.manufacturer}</div>
                 <div className="flex gap-4 pt-2 border-t border-slate-800/80 font-mono text-[11px]">
-                  <div>{lang === 'hi' ? 'स्कोर' : 'Score'}: <strong className={selectedAuditForModal.verdict === 'COMPLIANT' || selectedAuditForModal.verdict === 'pass' ? 'text-emerald-400' : 'text-rose-400'}>{selectedAuditForModal.score}/100</strong></div>
+                  <div>
+                    {lang === 'hi' ? 'स्कोर' : 'Score'}:{' '}
+                    <strong className={checkIsCompliant(selectedAuditForModal) ? 'text-emerald-400' : 'text-rose-400'}>
+                      {selectedAuditForModal.score}/100
+                    </strong>
+                  </div>
                   <div>{lang === 'hi' ? 'न्यूनतम फॉन्ट' : 'Min Font'}: <strong className="text-amber-300">{selectedAuditForModal.minNumeralHeight}</strong></div>
                   <div>PDP: <strong className="text-slate-200">{selectedAuditForModal.pdpArea || 150} cm²</strong></div>
                 </div>

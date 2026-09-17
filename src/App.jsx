@@ -165,15 +165,19 @@ export default function App() {
 
       const violationsCount = rules.filter(r => r.status === 'violation').length;
       const isOverallCompliant = violationsCount === 0;
+      const score = isOverallCompliant ? 100 : Math.max(0, 100 - violationsCount * 16);
+      const status = (score === 100 && violationsCount === 0) ? 'COMPLIANT' : 'VIOLATION';
 
       const newRecord = {
         id: `scan-${Date.now()}`,
         name: imageName || 'Scanned Packaged Commodity',
         image: imageDataUrl,
-        verdict: isOverallCompliant ? 'compliant' : 'violation',
+        status,
+        verdict: status,
         verdictBanner: isOverallCompliant ? 'Packaged Commodity Compliant' : `${violationsCount} Statutory Violations Detected`,
-        score: isOverallCompliant ? 100 : Math.max(0, 100 - violationsCount * 16),
+        score,
         violationsCount,
+        contraventionCount: violationsCount,
         packageWidth,
         pdpArea,
         minNumeralHeight: '2.5 mm',
@@ -255,6 +259,10 @@ export default function App() {
         const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
         const historyItem = {
           ...newRecord,
+          status,
+          verdict: status,
+          score,
+          contraventionCount: violationsCount,
           timestamp: `${dateStr}, ${timeStr} IST`,
           commodity: imageName ? `Packaging Specimen (${imageName})` : 'Scanned Packaged Commodity',
           manufacturer: 'Identified Packaged Commodity Packer / Marketer'
