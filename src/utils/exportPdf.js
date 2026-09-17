@@ -42,33 +42,33 @@ export function exportFormVPdf({
   const generatedMemoRef =
     memoRef || `LMO/2026/${Math.floor(1000 + Math.random() * 9000)}`;
 
-  const violations = rules.filter((r) => r.status === 'violation');
-  const isCompliant = violations.length === 0;
-  const overallVerdict = isCompliant
-    ? 'COMPLIANT (STATUTORY CERTIFICATE ISSUED)'
-    : 'NON-COMPLIANT (ACTION UNDER SECTION 36 INITIATED)';
+  // Determine statutory compliance status
+  const violations = rules.filter((r) => r.status === 'violation' || r.status === 'fail');
+  const contraventionCount = violations.length;
+  const isCompliant = contraventionCount === 0 || score === 100;
 
   // Page Dimensions
   const pageWidth = doc.internal.pageSize.getWidth();
-  let currentY = 15;
+  let currentY = 14;
 
-  // --- 1. National Emblem / Header Band ---
-  // Top tricolor accent line
+  // --- 1. National Tricolor Accent Bar ---
+  const usableWidth = pageWidth - 28; // 210 - 28 = 182mm
+  const tricolorSegment = usableWidth / 3;
   doc.setFillColor(255, 153, 51); // Saffron
-  doc.rect(14, currentY, (pageWidth - 28) / 3, 1.5, 'F');
-  doc.setFillColor(200, 200, 200); // White/Light Grey
-  doc.rect(14 + (pageWidth - 28) / 3, currentY, (pageWidth - 28) / 3, 1.5, 'F');
+  doc.rect(14, currentY, tricolorSegment, 1.5, 'F');
+  doc.setFillColor(220, 220, 220); // White/Light Silver
+  doc.rect(14 + tricolorSegment, currentY, tricolorSegment, 1.5, 'F');
   doc.setFillColor(19, 136, 8); // Green
-  doc.rect(14 + ((pageWidth - 28) * 2) / 3, currentY, (pageWidth - 28) / 3, 1.5, 'F');
+  doc.rect(14 + tricolorSegment * 2, currentY, tricolorSegment, 1.5, 'F');
 
-  currentY += 8;
+  currentY += 7;
 
   // Top Header: Government Attribution
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setTextColor(51, 65, 85); // Slate-700
   doc.text(
-    'GOVERNMENT OF INDIA / STATE LEGAL METROLOGY DEPARTMENT',
+    'GOVERNMENT OF INDIA / STATE LEGAL METROLOGY ENFORCEMENT DIRECTORATE',
     pageWidth / 2,
     currentY,
     { align: 'center' }
@@ -76,22 +76,32 @@ export function exportFormVPdf({
 
   currentY += 6;
 
-  // Document Title: FORM V
+  // Dynamic Header Title
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(15, 23, 42); // Slate-900 / Deep Navy
-  doc.text(
-    'FORM V - NOTICE OF INSPECTION & SEIZURE MEMO',
-    pageWidth / 2,
-    currentY,
-    { align: 'center' }
-  );
+  doc.setFontSize(12.5);
+  if (isCompliant) {
+    doc.setTextColor(15, 23, 42); // Dark Slate (#0f172a) / Emerald tone
+    doc.text(
+      'FORM V — STATUTORY INSPECTION MEMORANDUM & COMPLIANCE CERTIFICATE',
+      pageWidth / 2,
+      currentY,
+      { align: 'center' }
+    );
+  } else {
+    doc.setTextColor(185, 28, 28); // Crimson Red
+    doc.text(
+      'FORM V — NOTICE OF STATUTORY CONTRAVENTION & SEIZURE MEMORANDUM',
+      pageWidth / 2,
+      currentY,
+      { align: 'center' }
+    );
+  }
 
   currentY += 5;
 
   // Subtitle: Statutory Authority Citation
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(100, 116, 139); // Slate-500
   doc.text(
     'Issued under Section 15 & Section 36 of The Legal Metrology Act, 2009 read with PC Rules, 2011',
@@ -107,83 +117,98 @@ export function exportFormVPdf({
   doc.setLineWidth(0.4);
   doc.line(14, currentY, pageWidth - 14, currentY);
 
-  currentY += 6;
+  currentY += 4;
 
-  // --- 2. Inspection Metadata Box ---
-  doc.setFillColor(248, 250, 252); // Slate-50
+  // --- 2. Clean 4-Column Borderless Metadata Grid (autoTable) ---
+  const metadataRows = [
+    [
+      { content: 'Memo Reference:', styles: { fontStyle: 'bold', textColor: [71, 85, 105] } },
+      { content: generatedMemoRef, styles: { font: 'courier', fontStyle: 'bold', textColor: [15, 23, 42] } },
+      { content: 'Inspection Date & Time:', styles: { fontStyle: 'bold', textColor: [71, 85, 105] } },
+      { content: `${formattedDate}, ${formattedTime} IST`, styles: { textColor: [15, 23, 42] } }
+    ],
+    [
+      { content: 'Officer Badge ID:', styles: { fontStyle: 'bold', textColor: [71, 85, 105] } },
+      { content: inspectorId, styles: { font: 'courier', fontStyle: 'bold', textColor: [5, 150, 105] } },
+      { content: 'Compliance Score:', styles: { fontStyle: 'bold', textColor: [71, 85, 105] } },
+      {
+        content: `${score} / 100`,
+        styles: {
+          font: 'courier',
+          fontStyle: 'bold',
+          textColor: isCompliant ? [5, 150, 105] : [220, 38, 38]
+        }
+      }
+    ],
+    [
+      { content: 'Statutory Verdict:', styles: { fontStyle: 'bold', textColor: [71, 85, 105] } },
+      {
+        content: isCompliant ? 'COMPLIANT (PASSED)' : `CONTRAVENTION (${contraventionCount} FLAGGED)`,
+        styles: {
+          fontStyle: 'bold',
+          textColor: isCompliant ? [5, 150, 105] : [220, 38, 38]
+        }
+      },
+      { content: 'Prescribed Font Height:', styles: { fontStyle: 'bold', textColor: [71, 85, 105] } },
+      { content: `${minNumeralHeight} (Sched. II)`, styles: { font: 'courier', fontStyle: 'bold', textColor: [15, 23, 42] } }
+    ]
+  ];
+
+  autoTable(doc, {
+    startY: currentY,
+    body: metadataRows,
+    margin: { left: 14, right: 14 },
+    theme: 'plain',
+    tableWidth: 182,
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 1.8, right: 2, bottom: 1.8, left: 2 },
+      overflow: 'linebreak',
+      valign: 'middle'
+    },
+    columnStyles: {
+      0: { cellWidth: 42 },
+      1: { cellWidth: 50 },
+      2: { cellWidth: 46 },
+      3: { cellWidth: 44 }
+    }
+  });
+
+  currentY = doc.lastAutoTable.finalY + 4;
+
+  // Thin separator under metadata
   doc.setDrawColor(226, 232, 240); // Slate-200
-  doc.roundedRect(14, currentY, pageWidth - 28, 24, 2, 2, 'FD');
+  doc.setLineWidth(0.3);
+  doc.line(14, currentY, pageWidth - 14, currentY);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(51, 65, 85);
+  currentY += 4;
 
-  // Row 1 Metadata
-  doc.text('Memo Reference:', 18, currentY + 6);
-  doc.setFont('courier', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(generatedMemoRef, 48, currentY + 6);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(51, 65, 85);
-  doc.text('Inspection Timestamp:', 110, currentY + 6);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(15, 23, 42);
-  doc.text(`${formattedDate}, ${formattedTime} IST`, 147, currentY + 6);
-
-  // Row 2 Metadata
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(51, 65, 85);
-  doc.text('Officer ID:', 18, currentY + 13);
-  doc.setFont('courier', 'bold');
-  doc.setTextColor(16, 185, 129); // Emerald
-  doc.text(inspectorId, 48, currentY + 13);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(51, 65, 85);
-  doc.text('Compliance Score:', 110, currentY + 13);
-  doc.setFont('courier', 'bold');
-  doc.setTextColor(isCompliant ? 16 : 239, isCompliant ? 185 : 68, isCompliant ? 129 : 68);
-  doc.text(`${score} / 100`, 147, currentY + 13);
-
-  // Row 3 Metadata: Verdict & Prescribed Font Height
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(51, 65, 85);
-  doc.text('Overall Verdict:', 18, currentY + 20);
-  doc.setFont('helvetica', 'bold');
-  if (isCompliant) {
-    doc.setTextColor(16, 185, 129);
-  } else {
-    doc.setTextColor(220, 38, 38);
-  }
-  doc.text(overallVerdict, 48, currentY + 20);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(51, 65, 85);
-  doc.text('Prescribed Font Ht:', 110, currentY + 20);
-  doc.setFont('courier', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(minNumeralHeight, 147, currentY + 20);
-
-  currentY += 28;
-
-  // --- 3. Formatted Table of Declarations (jspdf-autotable) ---
+  // --- 3. Format Statutory Findings Table (jspdf-autotable) ---
   const tableColumns = [
     { header: 'Declaration Name', dataKey: 'name' },
     { header: 'Rule Reference', dataKey: 'rule' },
-    { header: 'Finding', dataKey: 'status' },
+    { header: 'Verdict', dataKey: 'status' },
     { header: 'Observed Text', dataKey: 'observed' },
     { header: 'Statutory Remarks', dataKey: 'remarks' }
   ];
 
   const tableRows = rules.map((r) => {
-    const isPass = r.status === 'pass';
+    const isPass = r.status === 'pass' || r.status === 'exempt';
+    const isExempt = r.status === 'exempt';
+    let statusText = 'VIOLATION';
+    if (isExempt) statusText = 'EXEMPT';
+    else if (isPass) statusText = 'PASS';
+
     return {
       name: r.title || 'Mandatory Declaration',
       rule: r.ruleId || r.clause || 'PCR, 2011',
-      status: isPass ? 'PASS' : 'VIOLATION',
-      observed: isPass ? r.detectedText || 'Verified' : r.offendingText || 'Defective/Missing',
-      remarks: isPass ? r.remark || 'Compliant with statutory standard.' : r.violationReason || 'Offence under Section 36.'
+      status: statusText,
+      observed: isPass
+        ? (r.detectedText || r.found || 'Verified on Principal Display Panel')
+        : (r.offendingText || r.found || 'Defective / Missing'),
+      remarks: isPass
+        ? (r.remark || r.law || 'Compliant with statutory metric standards.')
+        : (r.violationReason || r.law || 'Offence under Section 36.')
     };
   });
 
@@ -192,10 +217,12 @@ export function exportFormVPdf({
     columns: tableColumns,
     body: tableRows,
     margin: { left: 14, right: 14 },
+    tableWidth: 182, // Total: 40 + 35 + 18 + 38 + 51 = 182 mm
     theme: 'grid',
     styles: {
-      fontSize: 8,
-      cellPadding: 3,
+      fontSize: 7.8,
+      cellPadding: 2.6,
+      overflow: 'linebreak',
       valign: 'middle',
       textColor: [30, 41, 59] // Slate-800
     },
@@ -203,22 +230,25 @@ export function exportFormVPdf({
       fillColor: [15, 23, 42], // Dark Slate (#0f172a)
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 8.5
+      fontSize: 8,
+      halign: 'left'
     },
     columnStyles: {
-      name: { cellWidth: 36, fontStyle: 'bold' },
-      rule: { cellWidth: 30, fontStyle: 'normal' },
-      status: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
-      observed: { cellWidth: 42, fontStyle: 'normal' },
-      remarks: { cellWidth: 'auto', fontStyle: 'normal' }
+      name: { cellWidth: 40, fontStyle: 'bold' },
+      rule: { cellWidth: 35, fontStyle: 'normal' },
+      status: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
+      observed: { cellWidth: 38, fontStyle: 'normal' },
+      remarks: { cellWidth: 51, fontStyle: 'normal' }
     },
     didParseCell: (data) => {
-      // Style the status cell with green or red colors
       if (data.column.dataKey === 'status' && data.section === 'body') {
         if (data.cell.raw === 'PASS') {
-          data.cell.styles.textColor = [16, 185, 129]; // Emerald Green
+          data.cell.styles.textColor = [5, 150, 105]; // Emerald
           data.cell.styles.fillColor = [240, 253, 244]; // Light Emerald
-        } else if (data.cell.raw === 'VIOLATION') {
+        } else if (data.cell.raw === 'EXEMPT') {
+          data.cell.styles.textColor = [14, 116, 144]; // Cyan-700
+          data.cell.styles.fillColor = [236, 254, 255]; // Light Cyan
+        } else {
           data.cell.styles.textColor = [220, 38, 38]; // Crimson Red
           data.cell.styles.fillColor = [254, 242, 242]; // Light Red
         }
@@ -227,66 +257,105 @@ export function exportFormVPdf({
   });
 
   // Get final Y after table
-  const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : currentY + 80;
+  const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 5 : currentY + 80;
 
-  // --- 4. Statutory Warning Box (Section 36) ---
-  doc.setFillColor(254, 242, 242); // Light red
-  doc.setDrawColor(252, 165, 165); // Red border
-  doc.setLineWidth(0.4);
-  doc.roundedRect(14, finalY, pageWidth - 28, 14, 2, 2, 'FD');
+  // --- 4. Conditional Statutory Notice / Certificate Callout ---
+  if (isCompliant) {
+    // Green-accented clearance callout
+    doc.setFillColor(240, 253, 244); // Light Emerald
+    doc.setDrawColor(110, 231, 183); // Emerald-300
+    doc.setLineWidth(0.4);
+    doc.roundedRect(14, finalY, 182, 16, 2, 2, 'FD');
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(185, 28, 28); // Dark Red
-  doc.text('STATUTORY WARNING UNDER SECTION 36(1):', 18, finalY + 5.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(6, 95, 70); // Emerald-800
+    doc.text('STATUTORY COMPLIANCE CLEARANCE CERTIFICATE:', 18, finalY + 5.5);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(153, 27, 27);
-  doc.text(
-    'Notice under Section 36(1): Any contravention of mandatory packaging declarations is punishable with a fine up to Rs. 25,000.',
-    18,
-    finalY + 10.5
-  );
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(4, 120, 87); // Emerald-700
+    const clearanceText =
+      'The specimen audited above conforms to the mandatory declarations prescribed under The Legal Metrology (Packaged Commodities) Rules, 2011. No compounding notice or prosecution under Section 36 is warranted.';
+    const splitClearance = doc.splitTextToSize(clearanceText, 174);
+    doc.text(splitClearance, 18, finalY + 10);
+  } else {
+    // Red-accented warning callout
+    doc.setFillColor(254, 242, 242); // Light red
+    doc.setDrawColor(252, 165, 165); // Red border
+    doc.setLineWidth(0.4);
+    doc.roundedRect(14, finalY, 182, 16, 2, 2, 'FD');
 
-  // --- 5. Official Signature and Stamp Section ---
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(185, 28, 28); // Crimson
+    doc.text('STATUTORY NOTICE UNDER SECTION 36(1) OF THE ACT:', 18, finalY + 5.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(153, 27, 27); // Deep Red
+    const warningText =
+      'Failure to comply with pre-packaged commodity rules constitutes an offence under Section 36(1) punishable with fine up to Rs. 25,000 for the first offence, or subsequent compounding proceedings under Section 48.';
+    const splitWarning = doc.splitTextToSize(warningText, 174);
+    doc.text(splitWarning, 18, finalY + 10);
+  }
+
+  // --- 5. Signatures & Footer Layout ---
   const signY = finalY + 22;
 
-  // Officer Signature Box
+  // Left Signature Block: Legal Metrology Officer
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105);
-
-  doc.text('Inspected & Issued By:', 18, signY);
-  doc.line(18, signY + 15, 75, signY + 15); // Signature line
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105); // Slate-600
+  doc.text('INSPECTED & ISSUED BY (Legal Metrology Officer):', 14, signY);
+  doc.setDrawColor(148, 163, 184); // Slate-400
+  doc.setLineWidth(0.3);
+  doc.line(14, signY + 14, 75, signY + 14); // Signature line
   doc.setFont('helvetica', 'bold');
-  doc.text(`Legal Metrology Officer (${inspectorId})`, 18, signY + 19);
+  doc.setFontSize(8);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Authorized Officer (${inspectorId})`, 14, signY + 18);
   doc.setFont('helvetica', 'normal');
-  doc.text('Central Enforcement Directorate', 18, signY + 23);
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Legal Metrology Enforcement Directorate', 14, signY + 22);
 
-  // Seal of Office
+  // Center Seal of Office
   doc.setDrawColor(203, 213, 225);
   doc.setLineDashPattern([1.5, 1.5], 0);
-  doc.roundedRect(90, signY - 2, 35, 27, 2, 2, 'D');
+  doc.roundedRect(88, signY - 1, 34, 25, 2, 2, 'D');
   doc.setLineDashPattern([], 0);
-  doc.setFontSize(7.5);
-  doc.setTextColor(148, 163, 184);
-  doc.text('SEAL OF OFFICE', 107.5, signY + 12, { align: 'center' });
-
-  // Recipient / Packer Acknowledgement Line
-  doc.setTextColor(71, 85, 105);
-  doc.setFontSize(8);
-  doc.text('Received by Packer / Seller:', 135, signY);
-  doc.line(135, signY + 15, pageWidth - 18, signY + 15);
-  doc.text('Signature / Stamp & Date', 135, signY + 19);
-
-  // Bottom Security & Authenticity Footnote
   doc.setFontSize(7);
   doc.setTextColor(148, 163, 184);
+  doc.text('OFFICIAL SEAL', 105, signY + 11, { align: 'center' });
+  doc.text('& CREST', 105, signY + 15, { align: 'center' });
+
+  // Right Signature Block: Packer / Trader Acknowledgement
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text('RECEIVED & ACKNOWLEDGED BY (Packer/Trader):', 130, signY);
+  doc.setDrawColor(148, 163, 184);
+  doc.setLineWidth(0.3);
+  doc.line(130, signY + 14, 196, signY + 14); // Signature line
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Authorized Signatory / Representative', 130, signY + 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Date & Enterprise Seal', 130, signY + 22);
+
+  // Bottom Tamper-Evident Hash & Footer (y = 288mm)
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(148, 163, 184);
+  const auditHash = `LM-HASH:${timestampString}-${generatedMemoRef}-${score}`;
   doc.text(
-    `Form V Generated via National Legal Metrology Compliance Grid • Verification Hash: ${timestampString}-${generatedMemoRef}`,
+    `Form V Generated via National Legal Metrology Compliance Grid | Timestamp: ${formattedDate} ${formattedTime} IST | Audit Hash: ${auditHash}`,
     pageWidth / 2,
-    doc.internal.pageSize.getHeight() - 8,
+    288,
     { align: 'center' }
   );
 
