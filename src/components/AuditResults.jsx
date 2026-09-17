@@ -146,7 +146,9 @@ export default function AuditResults({
               {isCompliant ? (
                 <>
                   <ShieldCheck className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                  <span className="text-emerald-200">{t?.verdictPass || 'COMPLIANT WITH STATUTE'}</span>
+                  <span className="text-emerald-200">
+                    {auditData.verdictBanner || (lang === 'hi' ? 'पैकेज्ड वस्तु अनुपालित (0 उल्लंघन)' : 'Packaged Commodity Compliant')}
+                  </span>
                 </>
               ) : (
                 <>
@@ -237,6 +239,8 @@ export default function AuditResults({
       <div className="space-y-2.5">
         {(auditData.rules || []).map((card) => {
           const isPass = card.status === 'pass';
+          const isExempt = card.status === 'exempt';
+          const isCompliantStatus = isPass || isExempt;
           const isViolation = card.status === 'violation';
           const isSelected = selectedRuleId === card.id;
           const isHovered = hoveredBoxId === card.id;
@@ -267,7 +271,7 @@ export default function AuditResults({
                   ? isViolation
                     ? 'border-rose-500 ring-2 ring-rose-500/40 bg-rose-950/20 scale-[1.01] shadow-lg'
                     : 'border-emerald-500 ring-2 ring-emerald-500/40 bg-emerald-950/20 scale-[1.01] shadow-lg'
-                  : isPass
+                  : isCompliantStatus
                   ? 'border-slate-800/80 hover:border-slate-700'
                   : 'border-rose-900/50 hover:border-rose-800 bg-rose-950/5'
               }`}
@@ -275,7 +279,7 @@ export default function AuditResults({
               {/* Card Header: Plain Title + Muted Status Badge */}
               <div className="flex items-center justify-between gap-3 mb-1.5">
                 <h4 className="text-xs sm:text-sm font-semibold text-slate-200 flex items-center gap-2">
-                  {isPass ? (
+                  {isCompliantStatus ? (
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
                   ) : (
                     <AlertOctagon className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
@@ -284,8 +288,10 @@ export default function AuditResults({
                 </h4>
 
                 <span
-                  className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded border uppercase tracking-wide flex-shrink-0 ${
+                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border uppercase tracking-wide flex-shrink-0 ${
                     isPass
+                      ? 'bg-emerald-950/30 text-emerald-300 border-emerald-800/40'
+                      : isExempt
                       ? 'bg-emerald-950/30 text-emerald-300 border-emerald-800/40'
                       : isViolation
                       ? 'bg-rose-950/30 text-rose-300 border-rose-800/40'
@@ -294,6 +300,8 @@ export default function AuditResults({
                 >
                   {isPass 
                     ? (lang === 'hi' ? 'अनुपालित' : 'COMPLIANT')
+                    : isExempt
+                    ? (lang === 'hi' ? 'छूट प्राप्त (नियम 26)' : 'EXEMPT (RULE 26)')
                     : isViolation 
                     ? (lang === 'hi' ? 'उल्लंघन' : 'CONTRAVENTION') 
                     : (lang === 'hi' ? 'चेतावनी' : 'WARNING')}
@@ -308,7 +316,7 @@ export default function AuditResults({
                   </span>
                   <span
                     className={`font-mono text-[11px] ${
-                      isPass ? 'text-slate-200' : 'text-rose-300 bg-rose-950/30 px-1 py-0.5 rounded border border-rose-900/40'
+                      isCompliantStatus ? 'text-slate-200' : 'text-rose-300 bg-rose-950/30 px-1 py-0.5 rounded border border-rose-900/40'
                     }`}
                   >
                     {card.found}

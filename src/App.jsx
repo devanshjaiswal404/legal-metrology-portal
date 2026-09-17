@@ -7,6 +7,7 @@ import EcommerceAuditModule from './components/tabs/EcommerceAuditModule';
 import AnalyticsDashboard from './components/tabs/AnalyticsDashboard';
 import Footer from './components/Footer';
 import { translations } from './lib/translations';
+import { validateNetQuantity, validateUnitSalePrice } from './lib/statutoryValidation';
 
 export default function App() {
   // Language toggle: 'en' | 'hi'
@@ -104,14 +105,75 @@ export default function App() {
 
     // Simulate statutory OCR & metric rule audit analysis
     setTimeout(() => {
+      // Run statutory validation logic
+      const netQtyRes = validateNetQuantity('45 g');
+      const uspRes = validateUnitSalePrice({ netWeight: 45, netUnit: 'g', declaredUsp: '₹0.80 / g', isUspPresent: true });
+
+      const isNetQtyPass = netQtyRes.status === 'pass';
+      const isUspCompliant = uspRes.status === 'pass' || uspRes.status === 'exempt';
+
+      const rules = [
+        {
+          id: 'net-qty',
+          title: 'Net Quantity Unit',
+          status: netQtyRes.status,
+          found: netQtyRes.found,
+          law: netQtyRes.law,
+          citation: netQtyRes.citation
+        },
+        {
+          id: 'usp',
+          title: 'Unit Sale Price (USP)',
+          status: uspRes.status,
+          found: uspRes.found,
+          law: uspRes.law,
+          citation: uspRes.citation
+        },
+        {
+          id: 'mrp',
+          title: 'Maximum Retail Price (MRP)',
+          status: 'pass',
+          found: 'Retail price declared with tax note',
+          law: 'Valid price declared with mandatory "Inclusive of all taxes" text.',
+          citation: 'Rule 6(1)(e)'
+        },
+        {
+          id: 'mfg-date',
+          title: 'Date of Packing / Mfg',
+          status: 'pass',
+          found: 'Packaging date verified',
+          law: 'Valid month and year format with statutory prefix.',
+          citation: 'Rule 6(1)(d)'
+        },
+        {
+          id: 'origin',
+          title: 'Country of Origin',
+          status: 'pass',
+          found: 'Country of origin declared',
+          law: 'Clearly declared on the Principal Display Panel.',
+          citation: 'Rule 6(1)(da)'
+        },
+        {
+          id: 'care',
+          title: 'Consumer Helpline & Email',
+          status: 'pass',
+          found: 'Customer grievance redressal details identified',
+          law: 'Mandatory contact information provided under statutory rules.',
+          citation: 'Rule 6(1)(f)'
+        }
+      ];
+
+      const violationsCount = rules.filter(r => r.status === 'violation').length;
+      const isOverallCompliant = violationsCount === 0;
+
       const newRecord = {
         id: `scan-${Date.now()}`,
         name: imageName || 'Scanned Packaged Commodity',
         image: imageDataUrl,
-        verdict: 'violation',
-        verdictBanner: '2 Statutory Violations Detected',
-        score: 68,
-        violationsCount: 2,
+        verdict: isOverallCompliant ? 'compliant' : 'violation',
+        verdictBanner: isOverallCompliant ? 'Packaged Commodity Compliant' : `${violationsCount} Statutory Violations Detected`,
+        score: isOverallCompliant ? 100 : Math.max(0, 100 - violationsCount * 16),
+        violationsCount,
         packageWidth,
         pdpArea,
         minNumeralHeight: '2.5 mm',
@@ -121,24 +183,24 @@ export default function App() {
           {
             id: 'net-qty',
             fieldName: 'Net Quantity',
-            status: 'violation',
-            badgeText: 'Net Wt: Non-Standard Unit (VIOLATION)',
+            status: isNetQtyPass ? 'pass' : 'violation',
+            badgeText: isNetQtyPass ? 'Net Wt: 45 g (PASS)' : 'Net Wt: Non-Standard Unit (VIOLATION)',
             x: 12,
             y: 36,
             width: 52,
             height: 12,
-            detectedText: 'Net Qty declaration'
+            detectedText: 'Net Qty: 45 g'
           },
           {
             id: 'usp',
             fieldName: 'Unit Sale Price',
-            status: 'violation',
-            badgeText: 'USP Missing (VIOLATION)',
+            status: isUspCompliant ? 'pass' : 'violation',
+            badgeText: isUspCompliant ? 'USP Declared / Exempt (PASS)' : 'USP Missing (VIOLATION)',
             x: 12,
             y: 50,
             width: 48,
             height: 10,
-            detectedText: 'No USP Declared'
+            detectedText: uspRes.status === 'exempt' ? 'Exempt under Rule 26' : '₹0.80 / g'
           },
           {
             id: 'mrp',
@@ -174,56 +236,7 @@ export default function App() {
             detectedText: 'Country of Origin'
           }
         ],
-        rules: [
-          {
-            id: 'net-qty',
-            title: 'Net Quantity Unit',
-            status: 'violation',
-            found: 'Non-standard weight symbol detected on packaging panel',
-            law: 'Prohibited under Rule 13 and Section 11 of The Act. Statutory SI units strictly required (g, kg, ml, l).',
-            citation: 'Rule 6(1)(c) & Rule 13'
-          },
-          {
-            id: 'usp',
-            title: 'Unit Sale Price (USP)',
-            status: 'violation',
-            found: 'No Unit Sale Price declared on label',
-            law: 'Mandatory under Rule 6(11) for pre-packaged commodities exceeding 1 kg or 1 L.',
-            citation: 'Rule 6(11) of PCR, 2011'
-          },
-          {
-            id: 'mrp',
-            title: 'Maximum Retail Price (MRP)',
-            status: 'pass',
-            found: 'Retail price declared with tax note',
-            law: 'Valid price declared with mandatory "Inclusive of all taxes" text.',
-            citation: 'Rule 6(1)(e)'
-          },
-          {
-            id: 'mfg-date',
-            title: 'Date of Packing / Mfg',
-            status: 'pass',
-            found: 'Packaging date verified',
-            law: 'Valid month and year format with statutory prefix.',
-            citation: 'Rule 6(1)(d)'
-          },
-          {
-            id: 'origin',
-            title: 'Country of Origin',
-            status: 'pass',
-            found: 'Country of origin declared',
-            law: 'Clearly declared on the Principal Display Panel.',
-            citation: 'Rule 6(1)(da)'
-          },
-          {
-            id: 'care',
-            title: 'Consumer Helpline & Email',
-            status: 'pass',
-            found: 'Customer grievance redressal details identified',
-            law: 'Mandatory contact information provided under statutory rules.',
-            citation: 'Rule 6(1)(f)'
-          }
-        ]
+        rules
       };
 
       setAuditData(newRecord);

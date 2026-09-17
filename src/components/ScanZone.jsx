@@ -284,8 +284,8 @@ export default function ScanZone({
                   // Localized badge text if Hindi
                   let displayBadge = box.badgeText;
                   if (lang === 'hi') {
-                    if (box.id === 'net-qty') displayBadge = isPass ? 'शुद्ध मात्रा: मानक (पास)' : 'शुद्ध मात्रा: गैर-मानक इकाई (उल्लंघन)';
-                    else if (box.id === 'usp') displayBadge = isPass ? 'USP घोषित (पास)' : 'USP अनुपस्थित (उल्लंघन)';
+                    if (box.id === 'net-qty') displayBadge = isPass ? 'शुद्ध मात्रा: 45 g (पास)' : 'शुद्ध मात्रा: गैर-मानक इकाई (उल्लंघन)';
+                    else if (box.id === 'usp') displayBadge = isPass ? 'USP घोषित / छूट (पास)' : 'USP अनुपस्थित (उल्लंघन)';
                     else if (box.id === 'mrp') displayBadge = 'MRP कर सहित (पास)';
                     else if (box.id === 'mfg-date') displayBadge = 'पैकिंग तिथि घोषित (पास)';
                     else if (box.id === 'origin') displayBadge = 'मूल देश घोषित (पास)';
