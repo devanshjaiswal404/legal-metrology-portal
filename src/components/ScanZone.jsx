@@ -176,6 +176,37 @@ export default function ScanZone({
               </button>
             </div>
 
+            {/* Quick Demo Specimen Chips */}
+            <div className="pt-2 flex flex-col items-center gap-1.5">
+              <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+                {lang === 'hi' ? 'त्वरित परीक्षण नमूने:' : 'Quick Inspection Specimens:'}
+              </span>
+              <div className="flex items-center gap-2 flex-wrap justify-center">
+                <button
+                  type="button"
+                  onClick={() => onImageSelected(
+                    'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=700&auto=format&fit=crop',
+                    'britannia-bourbon-blank-inkjet-panel.jpg'
+                  )}
+                  className="px-2.5 py-1 rounded-md bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 text-[11px] font-medium transition-all hover:scale-105 cursor-pointer"
+                  title="Britannia Bourbon pack with unprinted MRP/MFD window (Triggers Seizure Memo)"
+                >
+                  🍪 {lang === 'hi' ? 'ब्रिटानिया बॉर्बन (अमुद्रित पैनल)' : 'Bourbon Pack (Unprinted Panel)'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onImageSelected(
+                    'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=700&auto=format&fit=crop',
+                    'tata-salt-packaged-standard.jpg'
+                  )}
+                  className="px-2.5 py-1 rounded-md bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-800/60 text-emerald-300 text-[11px] font-medium transition-all hover:scale-105 cursor-pointer"
+                  title="Tata Salt fully compliant package (Triggers Compliance Certificate)"
+                >
+                  🧂 {lang === 'hi' ? 'टाटा नमक (पूर्ण अनुपालित)' : 'Tata Salt (Compliant Pack)'}
+                </button>
+              </div>
+            </div>
+
             {cameraError && (
               <p className="text-xs text-rose-400 bg-rose-950/40 border border-rose-900/50 px-3 py-1.5 rounded-lg max-w-sm">
                 {cameraError}
@@ -284,11 +315,19 @@ export default function ScanZone({
                   // Localized badge text if Hindi
                   let displayBadge = box.badgeText;
                   if (lang === 'hi') {
-                    if (box.id === 'net-qty') displayBadge = isPass ? 'शुद्ध मात्रा: 45 g (पास)' : 'शुद्ध मात्रा: गैर-मानक इकाई (उल्लंघन)';
-                    else if (box.id === 'usp') displayBadge = isPass ? 'USP घोषित / छूट (पास)' : 'USP अनुपस्थित (उल्लंघन)';
-                    else if (box.id === 'mrp') displayBadge = 'MRP कर सहित (पास)';
-                    else if (box.id === 'mfg-date') displayBadge = 'पैकिंग तिथि घोषित (पास)';
-                    else if (box.id === 'origin') displayBadge = 'मूल देश घोषित (पास)';
+                    if (box.badgeHindi) {
+                      displayBadge = box.badgeHindi;
+                    } else if (box.id === 'net-qty') {
+                      displayBadge = isPass ? 'शुद्ध मात्रा: 45 g (पास)' : 'शुद्ध मात्रा: गैर-मानक इकाई (उल्लंघन)';
+                    } else if (box.id === 'usp') {
+                      displayBadge = isPass ? 'USP घोषित / छूट (पास)' : 'USP अनुपस्थित (उल्लंघन)';
+                    } else if (box.id === 'mrp') {
+                      displayBadge = isPass ? 'MRP कर सहित (पास)' : 'MRP अनुपस्थित / अमुद्रित (उल्लंघन)';
+                    } else if (box.id === 'mfg-date') {
+                      displayBadge = isPass ? 'पैकिंग तिथि घोषित (पास)' : 'निर्माण तिथि खाली (उल्लंघन)';
+                    } else if (box.id === 'origin') {
+                      displayBadge = 'मूल देश घोषित (पास)';
+                    }
                   }
 
                   return (

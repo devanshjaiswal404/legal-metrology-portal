@@ -112,7 +112,9 @@ export default function AuditResults({
         score: auditData.score || 0,
         minNumeralHeight: auditData.minNumeralHeight || '2.5 mm',
         inspectorId: auditData.inspectorId || 'LMO-Central-04',
-        memoRef: auditData.memoRef || 'LMO/2026/8842'
+        memoRef: auditData.memoRef || 'LMO/2026/8842',
+        commodity: auditData.name,
+        seller: auditData.manufacturer || 'Identified Packaged Commodity Packer / Marketer'
       });
       if (onTriggerToast) {
         onTriggerToast(
@@ -247,13 +249,19 @@ export default function AuditResults({
 
           // Localized Title
           let localizedTitle = card.title;
-          if (lang === 'hi' && t?.rules) {
-            if (card.id === 'mrp') localizedTitle = t.rules.mrp;
-            else if (card.id === 'net-qty') localizedTitle = t.rules.netQty;
-            else if (card.id === 'mfg-date') localizedTitle = t.rules.mfgDate;
-            else if (card.id === 'origin') localizedTitle = t.rules.origin;
-            else if (card.id === 'care') localizedTitle = t.rules.consumerCare;
-            else if (card.id === 'usp') localizedTitle = t.rules.usp;
+          if (lang === 'hi') {
+            if (card.titleHindi) {
+              localizedTitle = card.titleHindi;
+            } else if (t?.rules) {
+              if (card.id === 'mrp') localizedTitle = t.rules.mrp;
+              else if (card.id === 'net-qty') localizedTitle = t.rules.netQty;
+              else if (card.id === 'mfg-date') localizedTitle = t.rules.mfgDate;
+              else if (card.id === 'origin') localizedTitle = t.rules.origin;
+              else if (card.id === 'care') localizedTitle = t.rules.consumerCare;
+              else if (card.id === 'usp') localizedTitle = t.rules.usp;
+              else if (card.id === 'batch') localizedTitle = 'बैच / लॉट संख्या';
+              else if (card.id === 'packer') localizedTitle = 'निर्माता एवं विपणनकर्ता विवरण';
+            }
           }
 
           return (
