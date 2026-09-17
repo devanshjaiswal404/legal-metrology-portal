@@ -17,7 +17,10 @@ export function exportFormVPdf({
   score = 68,
   minNumeralHeight = '2.5 mm',
   inspectorId = 'LMO-Central-04',
-  memoRef
+  memoRef,
+  commodity,
+  seller,
+  platform
 }) {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -149,10 +152,17 @@ export function exportFormVPdf({
           textColor: isCompliant ? [5, 150, 105] : [220, 38, 38]
         }
       },
-      { content: 'Prescribed Font Height:', styles: { fontStyle: 'bold', textColor: [71, 85, 105] } },
-      { content: `${minNumeralHeight} (Sched. II)`, styles: { font: 'courier', fontStyle: 'bold', textColor: [15, 23, 42] } }
+      { content: seller ? 'Marketplace / Seller:' : 'Prescribed Font Height:', styles: { fontStyle: 'bold', textColor: [71, 85, 105] } },
+      { content: seller ? `${platform || 'E-Com'} | ${seller}` : `${minNumeralHeight} (Sched. II)`, styles: { font: 'courier', fontStyle: 'bold', textColor: [15, 23, 42] } }
     ]
   ];
+
+  if (commodity) {
+    metadataRows.push([
+      { content: 'Commodity Audited:', styles: { fontStyle: 'bold', textColor: [71, 85, 105] } },
+      { content: commodity, colSpan: 3, styles: { fontStyle: 'bold', textColor: [15, 23, 42] } }
+    ]);
+  }
 
   autoTable(doc, {
     startY: currentY,
