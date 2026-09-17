@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FolderArchive,
   Search,
@@ -12,25 +12,27 @@ import {
   CheckCircle2,
   XCircle,
   X,
-  AlertTriangle
+  AlertTriangle,
+  ClipboardCheck
 } from 'lucide-react';
 import { exportFormVPdf } from '../utils/exportPdf';
+import { getCleanInspections } from '../utils/storagePurge';
 
 export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en' }) {
-  // 1. Data Storage: Load directly and lazily from localStorage under 'metrology_inspections'
-  const [inspections, setInspections] = useState(() => {
-    try {
-      const stored = localStorage.getItem('metrology_inspections');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed;
-      }
-      return [];
-    } catch (err) {
-      console.error('Error accessing localStorage:', err);
-      return [];
-    }
-  });
+  // 1. Data Storage: Clean initial state free of legacy mock records
+  const [inspections, setInspections] = useState(() => getCleanInspections());
+
+  useEffect(() => {
+    const handleHistoryUpdate = () => {
+      setInspections(getCleanInspections());
+    };
+    window.addEventListener('metrology_history_updated', handleHistoryUpdate);
+    window.addEventListener('storage', handleHistoryUpdate);
+    return () => {
+      window.removeEventListener('metrology_history_updated', handleHistoryUpdate);
+      window.removeEventListener('storage', handleHistoryUpdate);
+    };
+  }, []);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'violations' | 'compliant'
@@ -223,16 +225,24 @@ export default function HistoryRepository({ onViewAudit, onClose, t, lang = 'en'
         </div>
 
         {filteredAudits.length === 0 ? (
-          <div className="p-12 text-center space-y-3">
-            <FolderArchive className="w-10 h-10 text-slate-600 mx-auto" />
-            <div className="text-sm font-semibold text-slate-300">
-              {t?.empty || 'No inspection dossiers recorded yet. Completed scans will appear here.'}
+          <div className="p-12 sm:p-16 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500 shadow-inner">
+              <ClipboardCheck className="w-7 h-7 text-slate-400" />
             </div>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              {searchTerm || filterMode !== 'all'
-                ? (lang === 'hi' ? 'कृपया अपनी खोज या फ़िल्टर चयन को समायोजित करें।' : 'Try adjusting your search query or filter selection.')
-                : (lang === 'hi' ? 'आधिकारिक डोजियर दर्ज करने के लिए पैकेट स्कैनर में स्कैन करें।' : 'Perform a scan in the Physical Package Scanner tab to record official inspection dossiers here.')}
-            </p>
+            <div className="space-y-1.5 max-w-md mx-auto">
+              <div className="text-base font-semibold text-slate-200 tracking-tight">
+                {searchTerm || filterMode !== 'all'
+                  ? (lang === 'hi' ? 'कोई मेल खाने वाला रिकॉर्ड नहीं मिला' : 'No Matching Records Found')
+                  : (lang === 'hi' ? 'कोई निरीक्षण रिकॉर्ड नहीं मिला' : 'No Inspection Records Found')}
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {searchTerm || filterMode !== 'all'
+                  ? (lang === 'hi' ? 'कृपया अपनी खोज या फ़िल्टर चयन को समायोजित करें।' : 'Try adjusting your search query or filter selection.')
+                  : (lang === 'hi'
+                      ? 'पैकेज स्कैनर में निरीक्षण चलाए जाने के बाद ऑडिट किए गए पैकेज और प्रपत्र V नोटिस यहां दिखाई देंगे।'
+                      : 'Audited packages and Form V notices will appear here once an inspection is run in the Package Scanner.')}
+              </p>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">

@@ -10,6 +10,7 @@ import Footer from './components/Footer';
 import { translations } from './lib/translations';
 import { validateNetQuantity, validateUnitSalePrice } from './lib/statutoryValidation';
 import { analyzePackagingSpecimen } from './services/inspectionService';
+import { getCleanInspections } from './utils/storagePurge';
 
 export default function App() {
   // Language toggle: 'en' | 'hi'
@@ -60,37 +61,20 @@ export default function App() {
   const [selectedBoxId, setSelectedBoxId] = useState(null);
   const [hoveredBoxId, setHoveredBoxId] = useState(null);
 
-  // History count tracker (initialized lazily from localStorage)
+  // History count tracker (initialized lazily from clean localStorage)
   const [historyCount, setHistoryCount] = useState(() => {
-    try {
-      const stored = localStorage.getItem('metrology_inspections');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed.length;
-      }
-    } catch {
-      // ignore
-    }
-    return 0;
+    return getCleanInspections().length;
   });
 
-  // Sync history count via storage events (avoids cascading re-renders)
+  // Sync history count via storage events and perform one-time mount purge
   useEffect(() => {
     const syncHistoryCount = () => {
-      try {
-        const stored = localStorage.getItem('metrology_inspections');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) {
-            setHistoryCount(parsed.length);
-            return;
-          }
-        }
-      } catch {
-        // ignore
-      }
-      setHistoryCount(0);
+      const clean = getCleanInspections();
+      setHistoryCount(clean.length);
     };
+
+    // Run initial purge on mount
+    syncHistoryCount();
 
     window.addEventListener('storage', syncHistoryCount);
     window.addEventListener('metrology_history_updated', syncHistoryCount);
@@ -123,7 +107,7 @@ export default function App() {
           title: 'Maximum Retail Price (MRP)',
           titleHindi: 'अधिकतम खुदरा मूल्य (MRP)',
           status: decl.mrp?.status || 'pass',
-          found: decl.mrp?.text || '₹28.00 (Inclusive of all taxes)',
+          found: decl.mrp?.text || (decl.mrp?.status === 'violation' ? '[BLANK / UNPRINTED]' : 'MRP Declared (Inclusive of all taxes)'),
           law: decl.mrp?.detail || 'Mandatory under Rule 6(1)(e). Retail sale price must be clearly printed inclusive of all taxes.',
           citation: decl.mrp?.rule || 'Rule 6(1)(e)'
         },
@@ -132,7 +116,7 @@ export default function App() {
           title: 'Unit Sale Price (USP)',
           titleHindi: 'इकाई विक्रय मूल्य (USP)',
           status: decl.usp?.status || 'pass',
-          found: decl.usp?.text || '₹0.028 / g',
+          found: decl.usp?.text || (decl.usp?.status === 'violation' ? '[BLANK / UNPRINTED]' : 'Unit Sale Price Declared'),
           law: decl.usp?.detail || 'Mandatory under Rule 6(11) of PC Rules, 2011. Pre-packaged commodities > 100 g must clearly declare per-unit sale price.',
           citation: decl.usp?.rule || 'Rule 6(11) & Rule 26'
         },
@@ -141,7 +125,7 @@ export default function App() {
           title: 'Net Quantity',
           titleHindi: 'मानक शुद्ध मात्रा एवं मीट्रिक इकाइयाँ',
           status: decl.net_quantity?.status || 'pass',
-          found: decl.net_quantity?.text || '1 kg',
+          found: decl.net_quantity?.text || (decl.net_quantity?.status === 'violation' ? '[NON-COMPLIANT UNIT]' : 'Standard Metric Quantity Declared'),
           law: decl.net_quantity?.detail || "Declared using statutory SI metric unit under Rule 13.",
           citation: decl.net_quantity?.rule || 'Rule 6(1)(c) & Rule 13'
         },
@@ -150,7 +134,7 @@ export default function App() {
           title: 'Date of Packing / Mfg',
           titleHindi: 'निर्माण / पैकिंग का माह एवं वर्ष',
           status: decl.mfg_date?.status || 'pass',
-          found: decl.mfg_date?.text || '01/2026 packaging format',
+          found: decl.mfg_date?.text || (decl.mfg_date?.status === 'violation' ? '[BLANK / UNPRINTED]' : 'Month & Year of Packaging Declared'),
           law: decl.mfg_date?.detail || 'Mandatory under Rule 6(1)(d). Month and year of manufacture or pre-packing must be clearly indicated.',
           citation: decl.mfg_date?.rule || 'Rule 6(1)(d)'
         },
@@ -168,7 +152,7 @@ export default function App() {
           title: 'Consumer Grievance Helpline',
           titleHindi: 'उपभोक्ता शिकायत निवारण संपर्क',
           status: decl.consumer_care?.status || 'pass',
-          found: decl.consumer_care?.text || 'Toll-free 1800-108-4488 & customercare@tataconsumer.com',
+          found: decl.consumer_care?.text || 'Consumer Grievance Redressal / Helpline Declared',
           law: decl.consumer_care?.detail || 'Valid consumer contact information and grievance redressal officer details displayed under Rule 6(1)(f).',
           citation: decl.consumer_care?.rule || 'Rule 6(1)(f)'
         },
