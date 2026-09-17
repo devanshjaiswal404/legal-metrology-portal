@@ -11,6 +11,13 @@ import { translations } from './lib/translations';
 import { validateNetQuantity, validateUnitSalePrice } from './lib/statutoryValidation';
 import { analyzePackagingSpecimen } from './services/inspectionService';
 import { getCleanInspections } from './utils/storagePurge';
+import {
+  getStoredOfficerSession,
+  saveOfficerSession,
+  clearOfficerSession,
+  DEFAULT_DEMO_OFFICER
+} from './utils/officerSession';
+import OfficerLoginModal from './components/auth/OfficerLoginModal';
 
 export default function App() {
   // Language toggle: 'en' | 'hi'
@@ -45,6 +52,58 @@ export default function App() {
   };
 
   const t = translations[lang] || translations.en;
+
+  // Officer Profile & Enforcement Session State
+  const [officer, setOfficer] = useState(() => {
+    return getStoredOfficerSession() || DEFAULT_DEMO_OFFICER;
+  });
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  // Pre-scan Statutory Inspection Metadata Setup
+  const [inspectionMetadata, setInspectionMetadata] = useState(() => ({
+    sampleId: `LMO/SMP/2026/${Math.floor(1000 + Math.random() * 9000)}`,
+    commodityCategory: 'Packaged Food & Snacks',
+    traderName: '',
+    inspectionType: 'Routine Market Surveillance',
+    location: officer?.district || 'Central District'
+  }));
+
+  // Synchronize officer session events across windows/tabs
+  useEffect(() => {
+    const handleSessionChange = (e) => {
+      setOfficer(e.detail || null);
+    };
+    window.addEventListener('metrology_officer_session_changed', handleSessionChange);
+    return () => window.removeEventListener('metrology_officer_session_changed', handleSessionChange);
+  }, []);
+
+  // Update default district in metadata when officer profile changes
+  useEffect(() => {
+    if (officer?.district) {
+      setInspectionMetadata((prev) => ({
+        ...prev,
+        location: prev.location === 'Central District' || !prev.location ? officer.district : prev.location
+      }));
+    }
+  }, [officer]);
+
+  const handleLoginSuccess = (officerData) => {
+    const saved = saveOfficerSession(officerData);
+    setOfficer(saved);
+    setIsLoginModalOpen(false);
+    showToast(
+      lang === 'hi'
+        ? `सत्यापित अधिकारी: ${saved.name} (${saved.officerId})`
+        : `Authenticated as ${saved.name} (${saved.officerId})`,
+      '🛡️'
+    );
+  };
+
+  const handleLogout = () => {
+    clearOfficerSession();
+    setOfficer(null);
+    showToast(lang === 'hi' ? 'अधिकारी सत्र समाप्त' : 'Officer session logged out', 'ℹ️');
+  };
 
   // Navigation active tab: 'scanner' | 'ecommerce' | 'repository' | 'analytics'
   const [activeTab, setActiveTab] = useState('scanner');
@@ -85,9 +144,11 @@ export default function App() {
   }, []);
 
   // User uploaded or captured a photo directly
-  const handleUserImageSelected = async (imageDataUrl, imageName, file = null) => {
+  const handleUserImageSelected = async (imageDataUrl, imageName, file = null, customMetadata = null) => {
     setIsAnalyzing(true);
     setAuditData({ image: imageDataUrl, name: imageName || 'Scanned Packaged Commodity', boxes: [] });
+
+    const activeMeta = customMetadata || inspectionMetadata;
 
     try {
       // Execute statutory inspection engine (Member 1 backend, Gemini multimodal, or deterministic fallback)
@@ -207,8 +268,43 @@ export default function App() {
       const manufacturerName = decl.packer?.text || inspectionResult.brand || 'Identified Packaged Commodity Packer / Marketer';
       const verdictBanner = overall_verdict;
 
+      const inspectionId = `INSP-${Date.now()}`;
+      const activeOfficer = officer || {
+        officerId: 'LMO-Central-04',
+        name: 'Inspector S. Sharma',
+        designation: 'Legal Metrology Officer',
+        district: 'Central District'
+      };
+
+      const finalMeta = {
+        sampleId: activeMeta?.sampleId || `LMO/SMP/2026/${Math.floor(1000 + Math.random() * 9000)}`,
+        commodityCategory: activeMeta?.commodityCategory || 'Packaged Food & Snacks',
+        traderName: activeMeta?.traderName || decl.packer?.text || manufacturerName,
+        inspectionType: activeMeta?.inspectionType || 'Routine Market Surveillance',
+        location: activeMeta?.location || activeOfficer.district || 'Central District'
+      };
+
       const newRecord = {
-        id: `scan-${Date.now()}`,
+        id: inspectionId,
+        inspectionId,
+        officer: {
+          officerId: activeOfficer.officerId,
+          name: activeOfficer.name,
+          designation: activeOfficer.designation,
+          district: activeOfficer.district
+        },
+        inspectionMetadata: finalMeta,
+        images: {
+          original: imageDataUrl,
+          processed: imageDataUrl
+        },
+        extractedDeclarations: decl,
+        complianceResults: rules,
+        violations: inspectionResult.violations || [],
+        manualReview: null,
+        report: null,
+
+        // Backwards compatibility fields for existing UI & PDF export
         name: commodityName,
         image: imageDataUrl,
         status,
@@ -218,13 +314,12 @@ export default function App() {
         score,
         violationsCount,
         contraventionCount: violationsCount,
-        violations: inspectionResult.violations || [],
         packageWidth,
         pdpArea,
         minNumeralHeight: '2.5 mm',
-        memoRef: `LMO/2026/${Math.floor(1000 + Math.random() * 9000)}`,
-        inspectorId: 'LMO-Central-04',
-        manufacturer: manufacturerName,
+        memoRef: finalMeta.sampleId,
+        inspectorId: activeOfficer.officerId,
+        manufacturer: finalMeta.traderName || manufacturerName,
         boxes,
         rules
       };
@@ -268,6 +363,25 @@ export default function App() {
     }
   };
 
+  // Handle manual officer review update from AuditResults modal
+  const handleUpdateAuditData = (updatedAudit) => {
+    setAuditData(updatedAudit);
+
+    // Synchronize update to local storage inspection repository
+    try {
+      const stored = JSON.parse(localStorage.getItem('metrology_inspections') || '[]');
+      const updatedList = stored.map((item) =>
+        item.id === updatedAudit.id || item.inspectionId === updatedAudit.inspectionId
+          ? { ...item, ...updatedAudit }
+          : item
+      );
+      localStorage.setItem('metrology_inspections', JSON.stringify(updatedList));
+      setHistoryCount(updatedList.length);
+    } catch (err) {
+      console.error('Failed to sync updated audit to repository:', err);
+    }
+  };
+
   // Reset scan back to clean welcoming state
   const handleResetImage = () => {
     setAuditData(null);
@@ -292,6 +406,9 @@ export default function App() {
         historyCount={historyCount}
         lang={lang}
         onToggleLang={handleToggleLang}
+        officer={officer}
+        onOpenLogin={() => setIsLoginModalOpen(true)}
+        onLogout={handleLogout}
         t={t}
       />
 
@@ -316,6 +433,8 @@ export default function App() {
                 hoveredBoxId={hoveredBoxId}
                 onHoverBox={setHoveredBoxId}
                 isAnalyzing={isAnalyzing}
+                metadata={inspectionMetadata}
+                onMetadataChange={setInspectionMetadata}
                 t={t.scanner}
                 lang={lang}
               />
@@ -330,6 +449,8 @@ export default function App() {
                 hoveredBoxId={hoveredBoxId}
                 onHoverBox={setHoveredBoxId}
                 isAnalyzing={isAnalyzing}
+                officer={officer}
+                onUpdateAuditData={handleUpdateAuditData}
                 t={t.scanner}
                 lang={lang}
                 onTriggerToast={showToast}
@@ -379,6 +500,15 @@ export default function App() {
 
       {/* Clean Minimal Footer */}
       <Footer t={t} lang={lang} />
+
+      {/* Officer Authentication & Enforcement Session Modal */}
+      <OfficerLoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
+        currentOfficer={officer}
+        lang={lang}
+      />
     </div>
   );
 }

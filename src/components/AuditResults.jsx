@@ -7,11 +7,15 @@ import {
   ShieldCheck,
   ShieldAlert,
   Loader2,
-  Scale
+  Scale,
+  FileCheck2,
+  UserCheck,
+  Activity
 } from 'lucide-react';
 import { exportFormVPdf } from '../utils/exportPdf';
 import { exportAuditDataCsv } from '../utils/exportCsv';
 import AnimatedNumber from './AnimatedNumber';
+import ManualVerificationModal from './ManualVerificationModal';
 
 export default function AuditResults({
   auditData,
@@ -20,11 +24,14 @@ export default function AuditResults({
   hoveredBoxId,
   onHoverBox,
   isAnalyzing = false,
+  officer = null,
+  onUpdateAuditData,
   t,
   lang = 'en',
   onTriggerToast
 }) {
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
 
   // If analysis in progress: Show Analyzing State
   if (isAnalyzing) {
@@ -100,6 +107,12 @@ export default function AuditResults({
   const handleDownloadPdf = () => {
     setIsDownloading(true);
     try {
+      const activeInspectorId =
+        auditData.manualReview?.reviewedById ||
+        officer?.officerId ||
+        auditData.inspectorId ||
+        'LMO-Central-04';
+
       exportFormVPdf({
         rules: (auditData.rules || []).map((r) => ({
           title: r.title,
@@ -113,7 +126,7 @@ export default function AuditResults({
         })),
         score: auditData.score || 0,
         minNumeralHeight: auditData.minNumeralHeight || '2.5 mm',
-        inspectorId: auditData.inspectorId || 'LMO-Central-04',
+        inspectorId: activeInspectorId,
         memoRef: auditData.memoRef || 'LMO/2026/8842',
         commodity: auditData.name,
         seller: auditData.manufacturer || 'Identified Packaged Commodity Packer / Marketer',
@@ -132,6 +145,61 @@ export default function AuditResults({
     }
   };
 
+  const handleSaveVerification = (reviewPayload) => {
+    if (!auditData) return;
+
+    // Map corrected fields into updated rules while preserving original findings
+    const updatedRules = (auditData.rules || []).map((r) => {
+      const fieldKey =
+        r.id === 'mrp' ? 'mrp' :
+        r.id === 'usp' ? 'usp' :
+        r.id === 'net-qty' ? 'net_quantity' :
+        r.id === 'mfg-date' ? 'mfg_date' :
+        r.id === 'origin' ? 'country_of_origin' :
+        r.id === 'care' ? 'consumer_care' :
+        r.id === 'packer' ? 'packer' :
+        r.id === 'commodity-name' ? 'product_name' : r.id;
+
+      const fieldMatch = reviewPayload.fields[fieldKey];
+      if (!fieldMatch) return r;
+
+      const isPass = fieldMatch.officerStatus === 'PASSED';
+      return {
+        ...r,
+        originalFound: r.originalFound || r.found,
+        found: fieldMatch.correctedValue || r.found,
+        status: isPass ? 'pass' : 'violation',
+        isOverridden: fieldMatch.correctedValue !== fieldMatch.originalValue || fieldMatch.officerStatus !== fieldMatch.aiStatus,
+        officerStatus: fieldMatch.officerStatus
+      };
+    });
+
+    const isNowCompliant = reviewPayload.finalVerdict === 'COMPLIANT';
+    const updatedAudit = {
+      ...auditData,
+      isReviewed: true,
+      originalVerdict: auditData.originalVerdict || auditData.overall_verdict,
+      originalScore: auditData.originalScore !== undefined ? auditData.originalScore : auditData.score,
+      overall_verdict: reviewPayload.finalVerdict,
+      verdict: isNowCompliant ? 'COMPLIANT' : 'CONTRAVENTION',
+      status: isNowCompliant ? 'COMPLIANT' : 'CONTRAVENTION',
+      score: reviewPayload.finalScore,
+      rules: updatedRules,
+      manualReview: reviewPayload
+    };
+
+    if (onUpdateAuditData) {
+      onUpdateAuditData(updatedAudit);
+    }
+
+    if (onTriggerToast) {
+      onTriggerToast(
+        lang === 'hi' ? 'अधिकारी मैनुअल सत्यापन सफलतापूर्वक सहेजा गया' : 'Manual Officer Verification recorded successfully',
+        '✓'
+      );
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* 1. Muted Institutional Status Banner */}
@@ -144,9 +212,17 @@ export default function AuditResults({
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
-            <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
-              {lang === 'hi' ? 'वैधानिक निरीक्षण निर्णय' : 'Statutory Inspection Verdict'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+                {lang === 'hi' ? 'वैधानिक निरीक्षण निर्णय' : 'Statutory Inspection Verdict'}
+              </span>
+              {auditData.isReviewed && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-800/80">
+                  <CheckCircle2 className="w-3 h-3 text-cyan-400" />
+                  <span>OFFICER VERIFIED</span>
+                </span>
+              )}
+            </div>
             <div className="text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2">
               {isCompliant ? (
                 <>
@@ -188,6 +264,59 @@ export default function AuditResults({
           </div>
         </div>
       </div>
+
+      {/* Manual Officer Verification Stage Strip */}
+      {auditData.isReviewed ? (
+        <div className="p-3.5 rounded-xl bg-cyan-950/20 border border-cyan-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
+          <div className="flex items-center gap-2.5 text-cyan-200">
+            <div className="p-1.5 rounded-lg bg-cyan-900/60 border border-cyan-700/60 text-cyan-300 flex-shrink-0">
+              <FileCheck2 className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-semibold text-white flex items-center gap-1.5">
+                <span>Manual Verification Completed</span>
+                <span className="text-[10px] font-mono text-cyan-300 bg-cyan-900/80 px-1.5 py-0.2 rounded">
+                  {auditData.manualReview?.officerDecision}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Verified by {auditData.manualReview?.reviewedBy} ({auditData.manualReview?.reviewedById}) &bull; {auditData.manualReview?.reviewedAt ? new Date(auditData.manualReview.reviewedAt).toLocaleTimeString() : ''}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsVerificationModalOpen(true)}
+            className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 hover:text-cyan-200 font-semibold border border-cyan-800/70 transition-all cursor-pointer self-start sm:self-auto"
+          >
+            Edit / Re-verify
+          </button>
+        </div>
+      ) : (
+        <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-200 text-xs sm:text-sm">Stage 10: Manual Officer Verification</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-amber-950/60 text-amber-300 border border-amber-800/60">
+                PENDING OFFICER REVIEW
+              </span>
+            </div>
+            <p className="text-slate-400 text-[11px]">
+              Inspect AI/OCR extracted declarations, adjust values, and add statutory officer remarks before filing.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsVerificationModalOpen(true)}
+            className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs shadow-md hover:-translate-y-0.5 transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap self-start sm:self-auto"
+          >
+            <FileCheck2 className="w-4 h-4" />
+            <span>Manual Officer Verification</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. Action Card: High-Contrast Primary Button + Ghost Secondary Button */}
       <div className="bg-[#111827] border border-slate-800 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -384,6 +513,16 @@ export default function AuditResults({
           );
         })}
       </div>
+
+      {/* Manual Officer Verification & Override Modal */}
+      <ManualVerificationModal
+        isOpen={isVerificationModalOpen}
+        onClose={() => setIsVerificationModalOpen(false)}
+        auditData={auditData}
+        officer={officer}
+        onSaveVerification={handleSaveVerification}
+        lang={lang}
+      />
     </div>
   );
 }

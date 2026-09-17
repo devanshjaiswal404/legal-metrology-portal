@@ -9,7 +9,12 @@ import {
   CheckCircle2,
   AlertOctagon,
   Loader2,
-  Sparkles
+  Sparkles,
+  FileText,
+  Building2,
+  MapPin,
+  RefreshCw,
+  Sliders
 } from 'lucide-react';
 
 export default function ScanZone({
@@ -26,14 +31,41 @@ export default function ScanZone({
   hoveredBoxId,
   onHoverBox,
   isAnalyzing = false,
+  metadata = null,
+  onMetadataChange = null,
   t,
   lang = 'en'
 }) {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+  const [isMetadataExpanded, setIsMetadataExpanded] = useState(true);
   const [imageLoadError, setImageLoadError] = useState(false);
   const [prevImageSrc, setPrevImageSrc] = useState(imageSrc);
+
+  // Fallback internal metadata if not supplied by parent
+  const [internalMetadata, setInternalMetadata] = useState({
+    sampleId: `LMO/SMP/2026/${Math.floor(1000 + Math.random() * 9000)}`,
+    commodityCategory: 'Packaged Food & Snacks',
+    traderName: '',
+    inspectionType: 'Routine Market Surveillance',
+    location: 'Central District'
+  });
+
+  const activeMetadata = metadata || internalMetadata;
+  const updateMetadataField = (field, value) => {
+    const updated = { ...activeMetadata, [field]: value };
+    if (onMetadataChange) {
+      onMetadataChange(updated);
+    } else {
+      setInternalMetadata(updated);
+    }
+  };
+
+  const regenerateSampleId = () => {
+    const newId = `LMO/SMP/2026/${Math.floor(1000 + Math.random() * 9000)}`;
+    updateMetadataField('sampleId', newId);
+  };
 
   if (prevImageSrc !== imageSrc) {
     setPrevImageSrc(imageSrc);
@@ -101,7 +133,7 @@ export default function ScanZone({
     stopCamera();
     canvas.toBlob((blob) => {
       const file = blob ? new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' }) : null;
-      onImageSelected(dataUrl, lang === 'hi' ? 'लाइव कैमरा कैप्चर' : 'Live Camera Capture', file);
+      onImageSelected(dataUrl, lang === 'hi' ? 'लाइव कैमरा कैप्चर' : 'Live Camera Capture', file, activeMetadata);
     }, 'image/jpeg', 0.95);
   };
 
@@ -110,7 +142,7 @@ export default function ScanZone({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-      onImageSelected(e.target.result, file.name, file);
+      onImageSelected(e.target.result, file.name, file, activeMetadata);
     };
     reader.readAsDataURL(file);
   };
@@ -135,6 +167,137 @@ export default function ScanZone({
         onChange={(e) => e.target.files && handleFile(e.target.files[0])}
         className="hidden"
       />
+
+      {/* Statutory Inspection Setup Card */}
+      <div className="bg-[#111827] border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="px-4 py-2.5 bg-slate-900/70 border-b border-slate-800/80 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs font-semibold text-slate-200 uppercase tracking-wide">
+              {lang === 'hi' ? 'निरीक्षण प्रकरण सेटअप' : 'Inspection Case Setup'}
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              {activeMetadata.sampleId}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsMetadataExpanded(!isMetadataExpanded)}
+            className="text-slate-400 hover:text-white text-xs flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <span className="text-[11px] text-slate-400">
+              {isMetadataExpanded ? (lang === 'hi' ? 'संक्षिप्त करें' : 'Collapse') : (lang === 'hi' ? 'विवरण संपादित करें' : 'Edit Details')}
+            </span>
+            {isMetadataExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {isMetadataExpanded ? (
+          <div className="p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-[#0f1523]/50">
+            {/* Sample Reference ID */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-medium text-slate-400">
+                  {lang === 'hi' ? 'नमूना संदर्भ संख्या' : 'Sample / Reference ID'}
+                </label>
+                <button
+                  type="button"
+                  onClick={regenerateSampleId}
+                  title="Generate New Sample ID"
+                  className="text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" />
+                  <span>{lang === 'hi' ? 'नया ID' : 'Auto'}</span>
+                </button>
+              </div>
+              <input
+                type="text"
+                value={activeMetadata.sampleId}
+                onChange={(e) => updateMetadataField('sampleId', e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                placeholder="LMO/SMP/2026/XXXX"
+              />
+            </div>
+
+            {/* Commodity Category */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-400">
+                {lang === 'hi' ? 'वस्तु श्रेणी' : 'Commodity Category'}
+              </label>
+              <select
+                value={activeMetadata.commodityCategory}
+                onChange={(e) => updateMetadataField('commodityCategory', e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+              >
+                <option value="Packaged Food & Snacks">Packaged Food & Snacks</option>
+                <option value="Beverages">Beverages</option>
+                <option value="Edible Oils">Edible Oils</option>
+                <option value="Cosmetics & Personal Care">Cosmetics & Personal Care</option>
+                <option value="Household Cleaning">Household Cleaning</option>
+                <option value="General Goods">General Goods</option>
+              </select>
+            </div>
+
+            {/* Trader / Retailer / Packaging Unit Name */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                <Building2 className="w-3 h-3 text-slate-500" />
+                <span>{lang === 'hi' ? 'विक्रेता / पैकेजिंग इकाई' : 'Trader / Retailer / Packer'}</span>
+              </label>
+              <input
+                type="text"
+                value={activeMetadata.traderName}
+                onChange={(e) => updateMetadataField('traderName', e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                placeholder={lang === 'hi' ? 'उदा. मेसर्स एबीसी रिटेलर्स' : 'e.g. Modern Retailers Pvt Ltd, Unit #2'}
+              />
+            </div>
+
+            {/* Inspection Type */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-400">
+                {lang === 'hi' ? 'निरीक्षण का प्रकार' : 'Inspection Type'}
+              </label>
+              <select
+                value={activeMetadata.inspectionType}
+                onChange={(e) => updateMetadataField('inspectionType', e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+              >
+                <option value="Routine Market Surveillance">Routine Market Surveillance</option>
+                <option value="Consumer Complaint Verification">Consumer Complaint Verification</option>
+                <option value="Targeted Enforcement Raid">Targeted Enforcement Raid</option>
+                <option value="Warehouse Audit">Warehouse Audit</option>
+              </select>
+            </div>
+
+            {/* Inspection Location / District */}
+            <div className="space-y-1 sm:col-span-2">
+              <label className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                <MapPin className="w-3 h-3 text-slate-500" />
+                <span>{lang === 'hi' ? 'निरीक्षण स्थान / अधिकार क्षेत्र' : 'Inspection Location / District'}</span>
+              </label>
+              <input
+                type="text"
+                value={activeMetadata.location}
+                onChange={(e) => updateMetadataField('location', e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                placeholder="e.g. South Delhi District, Okhla Phase III"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="px-4 py-2 text-[11px] text-slate-400 flex items-center justify-between bg-slate-900/30">
+            <span className="truncate">
+              {activeMetadata.commodityCategory} • {activeMetadata.inspectionType} • {activeMetadata.location || 'Jurisdiction Recorded'}
+            </span>
+            {activeMetadata.traderName && (
+              <span className="text-slate-300 font-medium ml-2 shrink-0 truncate max-w-[140px]">
+                {activeMetadata.traderName}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Main Scan Container Card */}
       <div className="bg-[#111827] border border-slate-800 rounded-xl overflow-hidden shadow-sm">

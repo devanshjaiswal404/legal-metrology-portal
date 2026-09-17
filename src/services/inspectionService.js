@@ -7,6 +7,21 @@
 
 import { validateNetQuantity, validateUnitSalePrice } from '../lib/statutoryValidation';
 
+// Environment-based Backend API Base URL configuration with sensible local fallback
+export const API_BASE_URL = (
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
+  (typeof process !== 'undefined' && process.env && process.env.VITE_API_BASE_URL) ||
+  'http://localhost:5000'
+).replace(/\/+$/, '');
+
+// Structured API Error Classification Codes
+export const API_ERROR_CODES = {
+  BACKEND_UNAVAILABLE: 'BACKEND_UNAVAILABLE',
+  REQUEST_FAILED: 'REQUEST_FAILED',
+  INVALID_RESPONSE: 'INVALID_RESPONSE',
+  ANALYSIS_FAILURE: 'ANALYSIS_FAILURE'
+};
+
 export const STATUTORY_SYSTEM_PROMPT = `
 You are the Chief Legal Metrology Officer (LMO) AI Inspector for the Government of India, operating under the Legal Metrology Act, 2009 and the Legal Metrology (Packaged Commodities) Rules, 2011 (as amended).
 
@@ -508,15 +523,24 @@ export async function analyzePackagingSpecimen(imageFileOrBase64, metadata = {})
     });
   }
 
-  // Step 2: Attempt POST to Member 1's backend endpoint at http://localhost:5000/api/audit
+  // Initialize structured API telemetry tracking
+  let apiTelemetry = {
+    source: 'BACKEND_API',
+    endpoint: `${API_BASE_URL}/api/audit`,
+    isSuccess: false,
+    isFallback: false,
+    error: null
+  };
+
+  // Step 2: Attempt POST to Member 1's backend endpoint at `${API_BASE_URL}/api/audit`
   try {
     const formData = new FormData();
     formData.append('image', fileToSend);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout for responsive fallback
+    const timeoutId = setTimeout(() => controller.abort(), 4500); // 4.5s timeout
 
-    const response = await fetch('http://localhost:5000/api/audit', {
+    const response = await fetch(`${API_BASE_URL}/api/audit`, {
       method: 'POST',
       body: formData,
       signal: controller.signal
@@ -524,15 +548,51 @@ export async function analyzePackagingSpecimen(imageFileOrBase64, metadata = {})
     clearTimeout(timeoutId);
 
     if (response.ok) {
-      const backendData = await response.json();
-      if (backendData) {
-        return normalizeBackendResponse(backendData, metadata);
+      let backendData = null;
+      try {
+        backendData = await response.json();
+      } catch (parseErr) {
+        apiTelemetry.error = {
+          code: API_ERROR_CODES.INVALID_RESPONSE,
+          message: `Backend returned invalid JSON response (${parseErr.message})`,
+          status: response.status
+        };
+      }
+
+      if (backendData && (backendData.declarations || backendData.compliance_score !== undefined || backendData.score !== undefined)) {
+        apiTelemetry.isSuccess = true;
+        apiTelemetry.status = response.status;
+        const normalized = normalizeBackendResponse(backendData, metadata);
+        return {
+          ...normalized,
+          apiTelemetry
+        };
+      } else if (backendData) {
+        apiTelemetry.error = {
+          code: API_ERROR_CODES.INVALID_RESPONSE,
+          message: 'Backend returned incomplete response missing mandatory statutory declarations schema.',
+          status: response.status,
+          raw: backendData
+        };
       }
     } else {
-      console.warn(`Member 1 backend returned HTTP ${response.status}, proceeding with client-side fallback.`);
+      apiTelemetry.error = {
+        code: API_ERROR_CODES.REQUEST_FAILED,
+        message: `Backend request failed with HTTP ${response.status} (${response.statusText || 'Error'})`,
+        status: response.status
+      };
+      console.warn(`Member 1 backend returned HTTP ${response.status}:`, apiTelemetry.error.message);
     }
   } catch (err) {
-    console.warn('Member 1 backend (http://localhost:5000/api/audit) offline or unreachable. Proceeding with client-side analysis fallback:', err);
+    const isTimeout = err.name === 'AbortError';
+    apiTelemetry.error = {
+      code: API_ERROR_CODES.BACKEND_UNAVAILABLE,
+      message: isTimeout
+        ? `Backend endpoint at ${API_BASE_URL}/api/audit timed out after 4500ms.`
+        : `Backend service at ${API_BASE_URL} is unreachable or offline (${err.message}).`,
+      originalError: err.message
+    };
+    console.warn('Member 1 backend offline or unreachable:', apiTelemetry.error.message);
   }
 
   // Step 3: Fallback A - Gemini multimodal inspection if VITE_GEMINI_API_KEY is configured
@@ -595,7 +655,16 @@ export async function analyzePackagingSpecimen(imageFileOrBase64, metadata = {})
           if (candidateText) {
             const parsed = JSON.parse(candidateText);
             if (parsed && parsed.declarations) {
-              return normalizeBackendResponse(parsed, metadata);
+              const normalized = normalizeBackendResponse(parsed, metadata);
+              return {
+                ...normalized,
+                apiTelemetry: {
+                  ...apiTelemetry,
+                  isFallback: true,
+                  source: 'GEMINI_MULTIMODAL',
+                  fallbackReason: apiTelemetry.error?.message || 'Backend offline'
+                }
+              };
             }
           }
         }
@@ -605,6 +674,15 @@ export async function analyzePackagingSpecimen(imageFileOrBase64, metadata = {})
     }
   }
 
-  // Step 4: Fallback B - Deterministic specimen analysis
-  return resolveFallbackSpecimen(imageFileOrBase64, metadata);
+  // Step 4: Fallback B - Deterministic dynamic specimen analysis
+  const fallbackResult = resolveFallbackSpecimen(imageFileOrBase64, metadata);
+  return {
+    ...fallbackResult,
+    apiTelemetry: {
+      ...apiTelemetry,
+      isFallback: true,
+      source: 'CLIENT_HEURISTIC',
+      fallbackReason: apiTelemetry.error?.message || 'Backend service unreachable'
+    }
+  };
 }
