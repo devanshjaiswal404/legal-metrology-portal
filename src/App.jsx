@@ -100,16 +100,17 @@ export default function App() {
   }, []);
 
   // User uploaded or captured a photo directly
-  const handleUserImageSelected = async (imageDataUrl, imageName) => {
+  const handleUserImageSelected = async (imageDataUrl, imageName, file = null) => {
     setIsAnalyzing(true);
     setAuditData({ image: imageDataUrl, name: imageName || 'Scanned Packaged Commodity', boxes: [] });
 
     try {
-      // Execute statutory inspection engine (Gemini multimodal or deterministic fallback)
+      // Execute statutory inspection engine (Member 1 backend, Gemini multimodal, or deterministic fallback)
       const inspectionResult = await analyzePackagingSpecimen(imageDataUrl, {
         imageName,
         packageWidth,
-        pdpArea
+        pdpArea,
+        file
       });
 
       const decl = inspectionResult.declarations || {};
@@ -213,23 +214,26 @@ export default function App() {
       });
 
       const violationsCount = inspectionResult.contravention_count ?? 0;
-      const isOverallCompliant = inspectionResult.compliance_score === 100 && violationsCount === 0;
+      const overall_verdict = inspectionResult.overall_verdict || (violationsCount === 0 ? 'COMPLIANT' : 'NON-COMPLIANT');
+      const isOverallCompliant = overall_verdict.toUpperCase() === 'COMPLIANT';
       const status = isOverallCompliant ? 'COMPLIANT' : 'CONTRAVENTION';
       const score = inspectionResult.compliance_score;
       const commodityName = inspectionResult.product_name || imageName || 'Scanned Packaged Commodity';
       const manufacturerName = decl.packer?.text || inspectionResult.brand || 'Identified Packaged Commodity Packer / Marketer';
-      const verdictBanner = inspectionResult.overall_verdict || (isOverallCompliant ? 'Packaged Commodity Compliant' : `${violationsCount} Statutory Contraventions Detected`);
+      const verdictBanner = overall_verdict;
 
       const newRecord = {
         id: `scan-${Date.now()}`,
         name: commodityName,
         image: imageDataUrl,
         status,
-        verdict: status,
+        verdict: overall_verdict,
+        overall_verdict,
         verdictBanner,
         score,
         violationsCount,
         contraventionCount: violationsCount,
+        violations: inspectionResult.violations || [],
         packageWidth,
         pdpArea,
         minNumeralHeight: '2.5 mm',

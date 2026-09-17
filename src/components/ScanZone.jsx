@@ -99,7 +99,10 @@ export default function ScanZone({
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
     stopCamera();
-    onImageSelected(dataUrl, lang === 'hi' ? 'लाइव कैमरा कैप्चर' : 'Live Camera Capture');
+    canvas.toBlob((blob) => {
+      const file = blob ? new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' }) : null;
+      onImageSelected(dataUrl, lang === 'hi' ? 'लाइव कैमरा कैप्चर' : 'Live Camera Capture', file);
+    }, 'image/jpeg', 0.95);
   };
 
   // Handle Drag & Drop / File Input
@@ -107,7 +110,7 @@ export default function ScanZone({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-      onImageSelected(e.target.result, file.name);
+      onImageSelected(e.target.result, file.name, file);
     };
     reader.readAsDataURL(file);
   };

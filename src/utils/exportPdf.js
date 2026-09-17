@@ -20,7 +20,8 @@ export function exportFormVPdf({
   memoRef,
   commodity,
   seller,
-  platform
+  platform,
+  overallVerdict = null
 }) {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -48,7 +49,9 @@ export function exportFormVPdf({
   // Determine statutory compliance status
   const violations = rules.filter((r) => r.status === 'violation' || r.status === 'fail');
   const contraventionCount = violations.length;
-  const isCompliant = contraventionCount === 0 || score === 100;
+  const isCompliant = overallVerdict
+    ? overallVerdict.toUpperCase() === 'COMPLIANT'
+    : (contraventionCount === 0 || score === 100);
 
   // Page Dimensions
   const pageWidth = doc.internal.pageSize.getWidth();

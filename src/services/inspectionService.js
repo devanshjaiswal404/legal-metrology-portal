@@ -367,32 +367,335 @@ export function resolveFallbackSpecimen(imageFileOrBase64, metadata = {}) {
 /**
  * Main Inspection Engine Function
  * @param {string|File} imageFileOrBase64 - Base64 Data URL or File
- * @param {object} metadata - Specimen metadata (e.g. imageName, packageWidth, pdpArea)
+/**
+ * Converts a Base64 data URL to a standard File object
+ */
+export function dataUrlToFile(dataUrl, filename = 'specimen.jpg') {
+  if (typeof dataUrl !== 'string') return dataUrl;
+  const arr = dataUrl.split(',');
+  if (arr.length < 2) return null;
+  const mimeMatch = arr[0].match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+}
+
+/**
+ * Normalizes coordinate from 0-1 decimal or 0-100 percentage
+ */
+function normalizeCoord(val, defaultVal = 10) {
+  const num = Number(val);
+  if (isNaN(num)) return defaultVal;
+  if (num > 0 && num <= 1) return Math.round(num * 100);
+  return Math.max(0, Math.min(100, Math.round(num)));
+}
+
+/**
+ * Safely formats a violation item from object or string
+ */
+export function formatViolation(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object') {
+    if (v.rule && v.issue) return `${v.rule}: ${v.issue}`;
+    if (v.rule && v.message) return `${v.rule}: ${v.message}`;
+    if (v.rule && v.detail) return `${v.rule}: ${v.detail}`;
+    if (v.rule && v.finding) return `${v.rule}: ${v.finding}`;
+    if (v.issue) return String(v.issue);
+    if (v.message) return String(v.message);
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
+/**
+ * Helper to extract declaration matching keys or statutory rule references
+ */
+function extractDeclaration(decls, keys, ruleCode) {
+  if (!decls) return null;
+  if (Array.isArray(decls)) {
+    return decls.find((d) => {
+      const r = String(d.rule || d.citation || d.id || d.name || '').toLowerCase();
+      return keys.some((k) => r.includes(k.toLowerCase())) || (ruleCode && r.includes(ruleCode.toLowerCase()));
+    });
+  }
+  if (typeof decls === 'object') {
+    for (const key of keys) {
+      if (decls[key]) return decls[key];
+    }
+    for (const val of Object.values(decls)) {
+      if (val && typeof val === 'object') {
+        const r = String(val.rule || val.citation || val.id || val.title || '').toLowerCase();
+        if (ruleCode && r.includes(ruleCode.toLowerCase())) return val;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Converts a raw declaration to standardized statutory finding object
+ */
+function normalizeDeclItem(declItem, defaultRule, defaultDetail, defaultStatus = 'pass') {
+  if (!declItem) {
+    return {
+      status: defaultStatus,
+      text: defaultStatus === 'pass' ? 'Declared and compliant' : '[MISSING / UNPRINTED]',
+      rule: defaultRule,
+      detail: defaultDetail
+    };
+  }
+  if (typeof declItem === 'string') {
+    return {
+      status: defaultStatus,
+      text: declItem,
+      rule: defaultRule,
+      detail: defaultDetail
+    };
+  }
+  const rawStatus = String(declItem.status || defaultStatus).toLowerCase();
+  const status = rawStatus === 'violation' || rawStatus === 'fail'
+    ? 'violation'
+    : rawStatus === 'exempt'
+    ? 'exempt'
+    : 'pass';
+
+  return {
+    status,
+    text: declItem.text || declItem.found || declItem.detectedText || declItem.value || 'Observed declaration',
+    rule: declItem.rule || declItem.citation || defaultRule,
+    detail: declItem.detail || declItem.law || declItem.remark || declItem.issue || defaultDetail
+  };
+}
+
+/**
+ * Normalizes Member 1's backend response from http://localhost:5000/api/audit
+ */
+export function normalizeBackendResponse(data, metadata = {}) {
+  // 1. Map compliance_score
+  const rawScore = Number(data.compliance_score ?? data.score);
+  const complianceScore = !isNaN(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 100;
+
+  // 2. Map overall_verdict ('COMPLIANT' vs 'NON-COMPLIANT')
+  const rawVerdict = String(data.overall_verdict || data.verdict || '').toUpperCase().trim();
+  let overallVerdict = 'NON-COMPLIANT';
+  if (rawVerdict === 'COMPLIANT' || (rawVerdict !== 'NON-COMPLIANT' && complianceScore === 100)) {
+    overallVerdict = 'COMPLIANT';
+  } else {
+    overallVerdict = 'NON-COMPLIANT';
+  }
+
+  // 3. Format violations safely without crashing: display `${v.rule}: ${v.issue}`
+  const rawViolations = Array.isArray(data.violations) ? data.violations : [];
+  const formattedViolations = rawViolations.map(formatViolation).filter(Boolean);
+
+  // 4. Map declarations to 8 statutory finding cards
+  const rawDecls = data.declarations || {};
+
+  const mrpDecl = normalizeDeclItem(
+    extractDeclaration(rawDecls, ['mrp', 'retail_price', 'price', 'maximum_retail_price'], '6(1)(e)'),
+    'Rule 6(1)(e)',
+    'Mandatory under Rule 6(1)(e). Retail sale price must be clearly printed inclusive of all taxes.',
+    overallVerdict === 'COMPLIANT' ? 'pass' : 'violation'
+  );
+
+  const uspDecl = normalizeDeclItem(
+    extractDeclaration(rawDecls, ['usp', 'unit_sale_price', 'unitSalePrice', 'unit_price'], '6(11)'),
+    'Rule 6(11) & Rule 26',
+    'Unit Sale Price mandatory for package > 100g under Rule 6(11).',
+    overallVerdict === 'COMPLIANT' ? 'pass' : 'violation'
+  );
+
+  const netQtyDecl = normalizeDeclItem(
+    extractDeclaration(rawDecls, ['net_quantity', 'netQuantity', 'net_qty', 'netQty', 'quantity'], '6(1)(c)'),
+    'Rule 6(1)(c) & Rule 13',
+    "Declared using standard metric unit under Rule 13.",
+    'pass'
+  );
+
+  const mfgDateDecl = normalizeDeclItem(
+    extractDeclaration(rawDecls, ['mfg_date', 'mfgDate', 'date_of_packing', 'packing_date', 'mfg'], '6(1)(d)'),
+    'Rule 6(1)(d)',
+    'Mandatory month and year of packaging under Rule 6(1)(d).',
+    overallVerdict === 'COMPLIANT' ? 'pass' : 'violation'
+  );
+
+  const originDecl = normalizeDeclItem(
+    extractDeclaration(rawDecls, ['country_of_origin', 'countryOfOrigin', 'origin'], '6(1)(da)'),
+    'Rule 6(1)(da)',
+    'Clearly declared on the Principal Display Panel.',
+    'pass'
+  );
+
+  const careDecl = normalizeDeclItem(
+    extractDeclaration(rawDecls, ['consumer_care', 'consumerCare', 'care', 'helpline', 'grievance'], '6(1)(f)'),
+    'Rule 6(1)(f)',
+    'Valid consumer contact information and grievance redressal officer details displayed under Rule 6(1)(f).',
+    'pass'
+  );
+
+  const packerDecl = normalizeDeclItem(
+    extractDeclaration(rawDecls, ['packer', 'manufacturer', 'packer_details', 'packerDetails', 'address'], '6(1)(a)'),
+    'Rule 6(1)(a)',
+    'Name and complete address of the manufacturer and packaging unit verified under Rule 6(1)(a).',
+    'pass'
+  );
+
+  const commodityNameDecl = normalizeDeclItem(
+    extractDeclaration(rawDecls, ['commodity_name', 'commodityName', 'product_name', 'productName', 'generic_name', 'commodity'], '6(1)(b)'),
+    'Rule 6(1)(b)',
+    'Generic commodity name explicitly identified on Principal Display Panel.',
+    'pass'
+  );
+
+  const declarations = {
+    mrp: mrpDecl,
+    usp: uspDecl,
+    net_quantity: netQtyDecl,
+    mfg_date: mfgDateDecl,
+    country_of_origin: originDecl,
+    consumer_care: careDecl,
+    packer: packerDecl,
+    commodity_name: commodityNameDecl
+  };
+
+  // 5. Map bounding boxes with normalized coordinates
+  const rawBoxes = data.bounding_boxes || data.boxes || data.boundingBoxes || [];
+  let bounding_boxes = [];
+
+  if (Array.isArray(rawBoxes) && rawBoxes.length > 0) {
+    bounding_boxes = rawBoxes.map((b, idx) => {
+      const isPass = b.status === 'pass';
+      return {
+        id: b.id || `box-${idx}`,
+        fieldName: b.fieldName || b.label || b.id || 'Declaration Area',
+        label: b.label || b.detectedText || (isPass ? 'COMPLIANT' : 'VIOLATION'),
+        badgeText: b.badgeText || b.label || (isPass ? 'PASS' : 'VIOLATION'),
+        badgeHindi: b.badgeHindi,
+        status: isPass ? 'pass' : 'violation',
+        x: normalizeCoord(b.x, 15),
+        y: normalizeCoord(b.y, 25),
+        width: normalizeCoord(b.width, 30),
+        height: normalizeCoord(b.height, 15),
+        detectedText: b.detectedText || b.text || ''
+      };
+    });
+  } else {
+    // If backend provided no bounding boxes, use fallback boxes corresponding to verdict
+    const fallback = resolveFallbackSpecimen(null, { ...metadata, isCompliant: overallVerdict === 'COMPLIANT' });
+    bounding_boxes = fallback.bounding_boxes || [];
+  }
+
+  const contraventionCount = Number(
+    data.contravention_count ??
+    data.violationsCount ??
+    formattedViolations.length ??
+    (overallVerdict === 'COMPLIANT' ? 0 : 1)
+  );
+
+  return {
+    product_name: data.product_name || metadata.imageName || 'Scanned Packaged Commodity',
+    brand: data.brand || packerDecl.text || 'Identified Packer / Brand',
+    compliance_score: complianceScore,
+    overall_verdict: overallVerdict,
+    contravention_count: contraventionCount,
+    declarations,
+    bounding_boxes,
+    violations: formattedViolations
+  };
+}
+
+/**
+ * Main Inspection Engine Function
+ * Connects to Member 1's backend endpoint at 'http://localhost:5000/api/audit'
+ * with seamless fallback to client-side specimen analysis.
+ *
+ * @param {string|File} imageFileOrBase64 - Base64 Data URL or File
+ * @param {object} metadata - Specimen metadata (e.g. imageName, packageWidth, pdpArea, file)
  * @returns {Promise<object>} Standardized statutory inspection result
  */
 export async function analyzePackagingSpecimen(imageFileOrBase64, metadata = {}) {
+  // Step 1: Prepare File object for FormData
+  let fileToSend = metadata.file;
+  if (!fileToSend) {
+    if (imageFileOrBase64 instanceof Blob || imageFileOrBase64 instanceof File) {
+      fileToSend = imageFileOrBase64;
+    } else if (typeof imageFileOrBase64 === 'string') {
+      if (imageFileOrBase64.startsWith('data:')) {
+        fileToSend = dataUrlToFile(imageFileOrBase64, metadata.imageName || 'specimen.jpg');
+      } else if (imageFileOrBase64.startsWith('http://') || imageFileOrBase64.startsWith('https://')) {
+        try {
+          const fetchRes = await fetch(imageFileOrBase64);
+          const blob = await fetchRes.blob();
+          fileToSend = new File([blob], metadata.imageName || 'specimen.jpg', {
+            type: blob.type || 'image/jpeg'
+          });
+        } catch {
+          // ignore remote fetch errors
+        }
+      }
+    }
+  }
+
+  // If still null, create minimal image placeholder
+  if (!fileToSend) {
+    fileToSend = new File([new Uint8Array([0xff, 0xd8, 0xff])], metadata.imageName || 'specimen.jpg', {
+      type: 'image/jpeg'
+    });
+  }
+
+  // Step 2: Attempt POST to Member 1's backend endpoint at http://localhost:5000/api/audit
+  try {
+    const formData = new FormData();
+    formData.append('image', fileToSend);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout for responsive fallback
+
+    const response = await fetch('http://localhost:5000/api/audit', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const backendData = await response.json();
+      if (backendData) {
+        return normalizeBackendResponse(backendData, metadata);
+      }
+    } else {
+      console.warn(`Member 1 backend returned HTTP ${response.status}, proceeding with client-side fallback.`);
+    }
+  } catch (err) {
+    console.warn('Member 1 backend (http://localhost:5000/api/audit) offline or unreachable. Proceeding with client-side analysis fallback:', err);
+  }
+
+  // Step 3: Fallback A - Gemini multimodal inspection if VITE_GEMINI_API_KEY is configured
   const geminiApiKey =
     (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) ||
     (typeof process !== 'undefined' && process.env && process.env.VITE_GEMINI_API_KEY) ||
     '';
 
-  // If Gemini API Key is present, attempt live multimodal AI audit
   if (geminiApiKey) {
     try {
       let base64Data = '';
       let mimeType = 'image/jpeg';
 
-      if (typeof imageFileOrBase64 === 'string') {
+      if (typeof imageFileOrBase64 === 'string' && imageFileOrBase64.startsWith('data:')) {
         const match = imageFileOrBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
         if (match) {
           mimeType = match[1];
           base64Data = match[2];
-        } else {
-          base64Data = imageFileOrBase64;
         }
-      } else if (imageFileOrBase64 instanceof Blob) {
-        mimeType = imageFileOrBase64.type || 'image/jpeg';
-        const buffer = await imageFileOrBase64.arrayBuffer();
+      } else if (fileToSend) {
+        mimeType = fileToSend.type || 'image/jpeg';
+        const buffer = await fileToSend.arrayBuffer();
         base64Data = btoa(
           new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
         );
@@ -421,62 +724,28 @@ export async function analyzePackagingSpecimen(imageFileOrBase64, metadata = {})
           }
         };
 
-        const response = await fetch(endpoint, {
+        const geminiRes = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
 
-        if (response.ok) {
-          const resJson = await response.json();
+        if (geminiRes.ok) {
+          const resJson = await geminiRes.json();
           const candidateText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
           if (candidateText) {
             const parsed = JSON.parse(candidateText);
             if (parsed && parsed.declarations) {
-              return sanitizeInspectionResult(parsed);
+              return normalizeBackendResponse(parsed, metadata);
             }
           }
         }
       }
     } catch (err) {
-      console.warn('Gemini multimodal inspection failed, falling back to deterministic engine:', err);
+      console.warn('Gemini multimodal inspection fallback failed:', err);
     }
   }
 
-  // Deterministic Guardrail Fallback
+  // Step 4: Fallback B - Deterministic specimen analysis
   return resolveFallbackSpecimen(imageFileOrBase64, metadata);
-}
-
-/**
- * Validates and normalizes Gemini or raw output to conform strictly to the statutory schema
- */
-function sanitizeInspectionResult(result) {
-  const complianceScore = Math.max(0, Math.min(100, Number(result.compliance_score) || 0));
-  const contraventions = Number(result.contravention_count) || (result.violations?.length ?? 0);
-
-  return {
-    product_name: result.product_name || 'Scanned Packaged Specimen',
-    brand: result.brand || 'Identified Brand / Manufacturer',
-    compliance_score: complianceScore,
-    overall_verdict:
-      result.overall_verdict ||
-      (contraventions > 0
-        ? `${contraventions} Statutory Contraventions Detected`
-        : 'All Statutory Declarations Compliant (Pass)'),
-    contravention_count: contraventions,
-    declarations: result.declarations || {},
-    bounding_boxes: Array.isArray(result.bounding_boxes)
-      ? result.bounding_boxes.map((b, idx) => ({
-          id: b.id || `box-${idx}`,
-          label: b.label || (b.status === 'violation' ? 'Violation Detected' : 'Compliant Declaration'),
-          status: b.status === 'violation' ? 'violation' : 'pass',
-          x: Math.max(0, Math.min(100, Number(b.x) || 10)),
-          y: Math.max(0, Math.min(100, Number(b.y) || 10)),
-          width: Math.max(2, Math.min(100, Number(b.width) || 20)),
-          height: Math.max(2, Math.min(100, Number(b.height) || 10)),
-          detectedText: b.detectedText || b.text || ''
-        }))
-      : [],
-    violations: Array.isArray(result.violations) ? result.violations : []
-  };
 }

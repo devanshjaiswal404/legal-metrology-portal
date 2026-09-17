@@ -8,13 +8,13 @@
  * @param {string} options.verdict
  * @param {Array} options.rules
  */
-export function exportAuditDataCsv({
-  productName = 'Packaged Commodity',
-  memoRef = 'LMO/2026/8842',
-  score = 68,
-  verdict = 'NON-COMPLIANT',
-  rules = []
-}) {
+export function exportAuditDataCsv(options = {}) {
+  const productName = options.productName || options.name || 'Packaged Commodity';
+  const memoRef = options.memoRef || 'LMO/2026/8842';
+  const score = options.score ?? 68;
+  const verdict = options.overall_verdict || options.verdict || 'NON-COMPLIANT';
+  const rules = options.rules || [];
+
   const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
 
   const headers = [

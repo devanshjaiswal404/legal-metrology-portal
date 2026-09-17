@@ -93,7 +93,9 @@ export default function AuditResults({
   }
 
   // Once Scanned: Show Big Status Banner + Rule Cards
-  const isCompliant = auditData.violationsCount === 0;
+  const isCompliant = auditData.overall_verdict
+    ? auditData.overall_verdict.toUpperCase() === 'COMPLIANT'
+    : (auditData.violationsCount === 0 || auditData.score === 100);
 
   const handleDownloadPdf = () => {
     setIsDownloading(true);
@@ -114,7 +116,8 @@ export default function AuditResults({
         inspectorId: auditData.inspectorId || 'LMO-Central-04',
         memoRef: auditData.memoRef || 'LMO/2026/8842',
         commodity: auditData.name,
-        seller: auditData.manufacturer || 'Identified Packaged Commodity Packer / Marketer'
+        seller: auditData.manufacturer || 'Identified Packaged Commodity Packer / Marketer',
+        overallVerdict: auditData.overall_verdict || auditData.verdict
       });
       if (onTriggerToast) {
         onTriggerToast(
@@ -149,16 +152,16 @@ export default function AuditResults({
                 <>
                   <ShieldCheck className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                   <span className="text-emerald-200">
-                    {auditData.verdictBanner || (lang === 'hi' ? 'पैकेज्ड वस्तु अनुपालित (0 उल्लंघन)' : 'Packaged Commodity Compliant')}
+                    {auditData.overall_verdict || auditData.verdictBanner || (lang === 'hi' ? 'पैकेज्ड वस्तु अनुपालित (0 उल्लंघन)' : 'COMPLIANT')}
                   </span>
                 </>
               ) : (
                 <>
                   <ShieldAlert className="w-5 h-5 text-rose-400 flex-shrink-0" />
                   <span className="text-rose-200">
-                    {lang === 'hi'
+                    {auditData.overall_verdict || (lang === 'hi'
                       ? `${auditData.violationsCount} वैधानिक उल्लंघन पाए गए`
-                      : `${auditData.violationsCount} Statutory Contraventions Detected`}
+                      : 'NON-COMPLIANT')}
                   </span>
                 </>
               )}
@@ -236,6 +239,37 @@ export default function AuditResults({
           </button>
         </div>
       </div>
+
+      {/* Flagged Violations Summary (Safely handles string or { rule, issue } objects) */}
+      {auditData.violations && auditData.violations.length > 0 && !isCompliant && (
+        <div className="p-4 rounded-xl bg-rose-950/25 border border-rose-800/45 space-y-2">
+          <div className="text-xs font-semibold text-rose-300 flex items-center gap-2">
+            <AlertOctagon className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <span>
+              {lang === 'hi'
+                ? `पहचाने गए वैधानिक उल्लंघन (${auditData.violations.length})`
+                : `Detected Statutory Violations (${auditData.violations.length})`}
+            </span>
+          </div>
+          <ul className="space-y-1.5 text-xs text-rose-200/90 pl-5 list-disc">
+            {auditData.violations.map((v, idx) => {
+              const text =
+                typeof v === 'string'
+                  ? v
+                  : v && typeof v === 'object'
+                  ? v.rule && v.issue
+                    ? `${v.rule}: ${v.issue}`
+                    : v.issue || v.message || v.detail || JSON.stringify(v)
+                  : String(v);
+              return (
+                <li key={idx} className="leading-relaxed font-mono text-[11.5px]">
+                  {text}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* 3. Clean & Readable Rule Cards List */}
       <div className="space-y-2.5">
