@@ -4,6 +4,7 @@ import ScanZone from './components/ScanZone';
 import AuditResults from './components/AuditResults';
 import HistoryRepository from './components/HistoryRepository';
 import EcommerceAuditModule from './components/tabs/EcommerceAuditModule';
+import PharmaDpcoModule from './components/tabs/PharmaDpcoModule';
 import AnalyticsDashboard from './components/tabs/AnalyticsDashboard';
 import Footer from './components/Footer';
 import { translations } from './lib/translations';
@@ -360,7 +361,14 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 3: Inspection Repository (History with Thumbnails & Memos) */}
+        {/* Tab 3: Pharma & DPCO Audit (NPPA Pricing Cap & Drug Packaging) */}
+        {activeTab === 'pharma' && (
+          <div key="pharma" className="animate-fade-slide">
+            <PharmaDpcoModule t={t} lang={lang} onTriggerToast={showToast} />
+          </div>
+        )}
+
+        {/* Tab 4: Inspection Repository (History with Thumbnails & Memos) */}
         {activeTab === 'repository' && (
           <div key="repository" className="animate-fade-slide">
             <HistoryRepository onViewAudit={handleViewHistoricalAudit} t={t.repository} lang={lang} />

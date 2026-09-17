@@ -4,7 +4,8 @@ import {
   ClipboardList,
   Camera,
   Globe,
-  BarChart3
+  BarChart3,
+  Pill
 } from 'lucide-react';
 
 export default function Header({
@@ -18,6 +19,7 @@ export default function Header({
   const tabs = [
     { id: 'scanner', label: t?.tabs?.scanner || 'Package Scanner', icon: Camera, emoji: '📸' },
     { id: 'ecommerce', label: t?.tabs?.ecommerce || 'E-Commerce Audit', icon: Globe, emoji: '🌐' },
+    { id: 'pharma', label: t?.tabs?.pharma || 'Pharma & DPCO Audit', icon: Pill, emoji: '💊' },
     { id: 'repository', label: t?.tabs?.repository || 'Inspection Repository', icon: ClipboardList, emoji: '📋' },
     { id: 'analytics', label: t?.tabs?.analytics || 'Enforcement Analytics', icon: BarChart3, emoji: '📊' },
   ];

@@ -8,6 +8,7 @@ export const translations = {
     tabs: {
       scanner: "Package Scanner",
       ecommerce: "E-Commerce Audit",
+      pharma: "Pharma & DPCO Audit",
       repository: "Inspection Repository",
       analytics: "Enforcement Analytics"
     },
@@ -80,6 +81,7 @@ export const translations = {
     tabs: {
       scanner: "पैकेट स्कैनर",
       ecommerce: "ई-कॉमर्स ऑडिट",
+      pharma: "फार्मा एवं DPCO ऑडिट",
       repository: "निरीक्षण रजिस्टर",
       analytics: "प्रवर्तन डैशबोर्ड"
     },
