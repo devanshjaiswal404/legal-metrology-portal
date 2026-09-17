@@ -313,7 +313,7 @@ export default function ScanZone({
                   const isHovered = hoveredBoxId === box.id;
 
                   // Localized badge text if Hindi
-                  let displayBadge = box.badgeText;
+                  let displayBadge = box.badgeText || box.label || (isPass ? 'PASS' : 'VIOLATION');
                   if (lang === 'hi') {
                     if (box.badgeHindi) {
                       displayBadge = box.badgeHindi;

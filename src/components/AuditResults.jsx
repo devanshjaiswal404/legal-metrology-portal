@@ -261,6 +261,7 @@ export default function AuditResults({
               else if (card.id === 'usp') localizedTitle = t.rules.usp;
               else if (card.id === 'batch') localizedTitle = 'बैच / लॉट संख्या';
               else if (card.id === 'packer') localizedTitle = 'निर्माता एवं विपणनकर्ता विवरण';
+              else if (card.id === 'commodity-name') localizedTitle = 'वस्तु का सामान्य / वर्ग नाम';
             }
           }
 

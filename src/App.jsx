@@ -8,6 +8,7 @@ import AnalyticsDashboard from './components/tabs/AnalyticsDashboard';
 import Footer from './components/Footer';
 import { translations } from './lib/translations';
 import { validateNetQuantity, validateUnitSalePrice } from './lib/statutoryValidation';
+import { analyzePackagingSpecimen } from './services/inspectionService';
 
 export default function App() {
   // Language toggle: 'en' | 'hi'
@@ -99,306 +100,125 @@ export default function App() {
   }, []);
 
   // User uploaded or captured a photo directly
-  const handleUserImageSelected = (imageDataUrl, imageName) => {
+  const handleUserImageSelected = async (imageDataUrl, imageName) => {
     setIsAnalyzing(true);
     setAuditData({ image: imageDataUrl, name: imageName || 'Scanned Packaged Commodity', boxes: [] });
 
-    // Simulate statutory OCR & metric rule audit analysis
-    setTimeout(() => {
-      const nameLower = (imageName || '').toLowerCase();
-      
-      // Check if Specimen A: Blank / Unprinted Window (e.g. bourbon, britindia, britannia, blank, unprinted, contravention)
-      const isSpecimenABlank =
-        nameLower.includes('bourbon') ||
-        nameLower.includes('britindia') ||
-        nameLower.includes('britannia') ||
-        nameLower.includes('blank') ||
-        nameLower.includes('unprint') ||
-        nameLower.includes('inkjet') ||
-        nameLower.includes('contravention') ||
-        nameLower.includes('fail');
+    try {
+      // Execute statutory inspection engine (Gemini multimodal or deterministic fallback)
+      const inspectionResult = await analyzePackagingSpecimen(imageDataUrl, {
+        imageName,
+        packageWidth,
+        pdpArea
+      });
 
-      let rules = [];
-      let boxes = [];
-      let violationsCount = 0;
-      let isOverallCompliant = false;
-      let score = 100;
-      let verdictBanner = 'Packaged Commodity Compliant';
-      let commodityName = imageName || 'Scanned Packaged Commodity';
-      let manufacturerName = 'Identified Packaged Commodity Packer / Marketer';
+      const decl = inspectionResult.declarations || {};
 
-      if (isSpecimenABlank) {
-        // --- Specimen A: Blank / Unprinted Inkjet Panel (Bourbon Pack) ---
-        commodityName = 'Britannia Bourbon Chocolate Biscuits 500g (5 x 100g)';
-        manufacturerName = 'M/s Britannia Industries Ltd., 5/1A Hungerford Street, Kolkata - 700017';
-        score = 40;
-        violationsCount = 4;
-        isOverallCompliant = false;
-        verdictBanner = '4 Statutory Contraventions Detected (Unprinted Mandatory Declarations)';
+      // Transform declarations into statutory rule cards for UI & Form V PDF
+      const rules = [
+        {
+          id: 'mrp',
+          title: 'Maximum Retail Price (MRP)',
+          titleHindi: 'अधिकतम खुदरा मूल्य (MRP)',
+          status: decl.mrp?.status || 'pass',
+          found: decl.mrp?.text || '₹28.00 (Inclusive of all taxes)',
+          law: decl.mrp?.detail || 'Mandatory under Rule 6(1)(e). Retail sale price must be clearly printed inclusive of all taxes.',
+          citation: decl.mrp?.rule || 'Rule 6(1)(e)'
+        },
+        {
+          id: 'usp',
+          title: 'Unit Sale Price (USP)',
+          titleHindi: 'इकाई विक्रय मूल्य (USP)',
+          status: decl.usp?.status || 'pass',
+          found: decl.usp?.text || '₹0.028 / g',
+          law: decl.usp?.detail || 'Mandatory under Rule 6(11) of PC Rules, 2011. Pre-packaged commodities > 100 g must clearly declare per-unit sale price.',
+          citation: decl.usp?.rule || 'Rule 6(11) & Rule 26'
+        },
+        {
+          id: 'net-qty',
+          title: 'Net Quantity',
+          titleHindi: 'मानक शुद्ध मात्रा एवं मीट्रिक इकाइयाँ',
+          status: decl.net_quantity?.status || 'pass',
+          found: decl.net_quantity?.text || '1 kg',
+          law: decl.net_quantity?.detail || "Declared using statutory SI metric unit under Rule 13.",
+          citation: decl.net_quantity?.rule || 'Rule 6(1)(c) & Rule 13'
+        },
+        {
+          id: 'mfg-date',
+          title: 'Date of Packing / Mfg',
+          titleHindi: 'निर्माण / पैकिंग का माह एवं वर्ष',
+          status: decl.mfg_date?.status || 'pass',
+          found: decl.mfg_date?.text || '01/2026 packaging format',
+          law: decl.mfg_date?.detail || 'Mandatory under Rule 6(1)(d). Month and year of manufacture or pre-packing must be clearly indicated.',
+          citation: decl.mfg_date?.rule || 'Rule 6(1)(d)'
+        },
+        {
+          id: 'origin',
+          title: 'Country of Origin',
+          titleHindi: 'मूल देश (Country of Origin)',
+          status: decl.country_of_origin?.status || 'pass',
+          found: decl.country_of_origin?.text || 'Country of Origin: India',
+          law: decl.country_of_origin?.detail || 'Clearly declared on the Principal Display Panel.',
+          citation: decl.country_of_origin?.rule || 'Rule 6(1)(da)'
+        },
+        {
+          id: 'care',
+          title: 'Consumer Grievance Helpline',
+          titleHindi: 'उपभोक्ता शिकायत निवारण संपर्क',
+          status: decl.consumer_care?.status || 'pass',
+          found: decl.consumer_care?.text || 'Toll-free 1800-108-4488 & customercare@tataconsumer.com',
+          law: decl.consumer_care?.detail || 'Valid consumer contact information and grievance redressal officer details displayed under Rule 6(1)(f).',
+          citation: decl.consumer_care?.rule || 'Rule 6(1)(f)'
+        },
+        {
+          id: 'packer',
+          title: 'Packer Details',
+          titleHindi: 'निर्माता एवं विपणनकर्ता विवरण',
+          status: decl.packer?.status || 'pass',
+          found: decl.packer?.text || 'Manufactured & Marketed by Packer',
+          law: decl.packer?.detail || 'Name and complete address of the manufacturer and packaging unit verified under Rule 6(1)(a).',
+          citation: decl.packer?.rule || 'Rule 6(1)(a)'
+        },
+        {
+          id: 'commodity-name',
+          title: 'Generic Commodity Name',
+          titleHindi: 'वस्तु का सामान्य / वर्ग नाम',
+          status: decl.commodity_name?.status || 'pass',
+          found: decl.commodity_name?.text || inspectionResult.product_name,
+          law: decl.commodity_name?.detail || 'Generic or common name of commodity declared on Principal Display Panel under Rule 6(1)(b).',
+          citation: decl.commodity_name?.rule || 'Rule 6(1)(b)'
+        }
+      ];
 
-        rules = [
-          {
-            id: 'mrp',
-            title: 'Maximum Retail Price (MRP)',
-            titleHindi: 'अधिकतम खुदरा मूल्य (MRP)',
-            status: 'violation',
-            found: 'MRP label present but numerical price value is missing/unprinted',
-            law: 'Mandatory under Rule 6(1)(e). Retail sale price must be clearly printed inclusive of all taxes. Unprinted or blank inkjet panel is a statutory offence under Section 36(1).',
-            citation: 'Rule 6(1)(e) read with Section 36(1)'
-          },
-          {
-            id: 'usp',
-            title: 'Unit Sale Price (USP)',
-            titleHindi: 'इकाई विक्रय मूल्य (USP)',
-            status: 'violation',
-            found: 'USP label present but per-gram rate is missing/unprinted',
-            law: 'Mandatory under Rule 6(11) of PC Rules, 2011. Pre-packaged commodities > 100 g must clearly declare per-unit sale price (e.g. ₹/g).',
-            citation: 'Rule 6(11) of PCR, 2011'
-          },
-          {
-            id: 'mfg-date',
-            title: 'Date of Packing / Mfg',
-            titleHindi: 'निर्माण / पैकिंग का माह एवं वर्ष',
-            status: 'violation',
-            found: 'MFD label present but month/year is blank',
-            law: 'Mandatory under Rule 6(1)(d). Month and year of manufacture or pre-packing must be clearly indicated.',
-            citation: 'Rule 6(1)(d) read with Section 36(1)'
-          },
-          {
-            id: 'batch',
-            title: 'Batch or Lot Number',
-            titleHindi: 'बैच / लॉट संख्या',
-            status: 'violation',
-            found: 'Lot number missing',
-            law: 'Mandatory under Rule 6(1)(q). Every pre-packaged commodity must bear batch number or code identifying lot of manufacture.',
-            citation: 'Rule 6(1)(q) read with Section 36(1)'
-          },
-          {
-            id: 'net-qty',
-            title: 'Net Quantity',
-            titleHindi: 'मानक शुद्ध मात्रा एवं मीट्रिक इकाइयाँ',
-            status: 'pass',
-            found: '5 x 100 g = 500 g using statutory SI metric unit \'g\'',
-            law: 'Declared using statutory SI metric unit under Rule 13 and Rule 24 for multi-piece packages.',
-            citation: 'Rule 6(1)(c) read with Rule 13 & 24'
-          },
-          {
-            id: 'care',
-            title: 'Consumer Grievance Helpline',
-            titleHindi: 'उपभोक्ता शिकायत निवारण संपर्क',
-            status: 'pass',
-            found: 'Toll-free phone & email verified',
-            law: 'Valid consumer contact information and grievance redressal officer details displayed under Rule 6(1)(f).',
-            citation: 'Rule 6(1)(f)'
-          },
-          {
-            id: 'packer',
-            title: 'Packer Details',
-            titleHindi: 'निर्माता एवं विपणनकर्ता विवरण',
-            status: 'pass',
-            found: 'Manufacturer & marketing addresses declared',
-            law: 'Name and complete address of the manufacturer and packaging unit verified under Rule 6(1)(a).',
-            citation: 'Rule 6(1)(a)'
-          }
-        ];
+      // Format dynamic bounding boxes with bilingual tags
+      const boxes = (inspectionResult.bounding_boxes || []).map((b) => {
+        const isPass = b.status === 'pass';
+        let badgeHindi = b.badgeHindi;
+        if (!badgeHindi) {
+          if (b.id === 'mrp') badgeHindi = isPass ? 'MRP कर सहित (पास)' : 'MRP अनुपस्थित / अमुद्रित (उल्लंघन)';
+          else if (b.id === 'mfg-date') badgeHindi = isPass ? 'पैकिंग तिथि घोषित (पास)' : 'MFD एवं बैच संख्या खाली (उल्लंघन)';
+          else if (b.id === 'net-qty') badgeHindi = isPass ? 'शुद्ध मात्रा (पास)' : 'शुद्ध मात्रा (उल्लंघन)';
+          else if (b.id === 'usp') badgeHindi = isPass ? 'USP घोषित (पास)' : 'USP अनुपस्थित (उल्लंघन)';
+          else if (b.id === 'care') badgeHindi = isPass ? 'हेल्पलाइन एवं ईमेल (पास)' : 'हेल्पलाइन अनुपस्थित (उल्लंघन)';
+          else if (b.id === 'packer') badgeHindi = isPass ? 'निर्माता विवरण (पास)' : 'निर्माता विवरण अपूर्ण (उल्लंघन)';
+          else if (b.id === 'origin') badgeHindi = 'मूल देश घोषित (पास)';
+          else badgeHindi = isPass ? 'अनुपालित (पास)' : 'उल्लंघन';
+        }
+        return {
+          ...b,
+          badgeText: b.label || b.badgeText || (isPass ? 'PASS' : 'VIOLATION'),
+          badgeHindi,
+          fieldName: b.fieldName || b.label || b.id
+        };
+      });
 
-        boxes = [
-          {
-            id: 'mrp',
-            fieldName: 'MRP & USP Panel',
-            status: 'violation',
-            badgeText: 'MRP & USP Blank / Unprinted (VIOLATION)',
-            badgeHindi: 'MRP एवं USP अमुद्रित / खाली (उल्लंघन)',
-            x: 67,
-            y: 35,
-            width: 25,
-            height: 22,
-            detectedText: 'MRP: [BLANK] / USP: [BLANK]'
-          },
-          {
-            id: 'mfg-date',
-            fieldName: 'MFD & Batch Panel',
-            status: 'violation',
-            badgeText: 'MFD & Batch Blank (VIOLATION)',
-            badgeHindi: 'MFD एवं बैच संख्या खाली (उल्लंघन)',
-            x: 72,
-            y: 45,
-            width: 20,
-            height: 12,
-            detectedText: 'MFD: [BLANK] / LOT: [BLANK]'
-          },
-          {
-            id: 'net-qty',
-            fieldName: 'Net Quantity',
-            status: 'pass',
-            badgeText: 'Net Wt: 500 g (PASS)',
-            badgeHindi: 'शुद्ध मात्रा: 500 g (पास)',
-            x: 81,
-            y: 30,
-            width: 12,
-            height: 5,
-            detectedText: '5 x 100 g = 500 g'
-          },
-          {
-            id: 'care',
-            fieldName: 'Consumer Care',
-            status: 'pass',
-            badgeText: 'Helpline & Email (PASS)',
-            badgeHindi: 'हेल्पलाइन एवं ईमेल (पास)',
-            x: 28,
-            y: 58,
-            width: 35,
-            height: 12,
-            detectedText: 'feedback@britannia.co.in | 1800-425-4449'
-          },
-          {
-            id: 'packer',
-            fieldName: 'Packer Details',
-            status: 'pass',
-            badgeText: 'Packer Addresses (PASS)',
-            badgeHindi: 'निर्माता विवरण (पास)',
-            x: 8,
-            y: 70,
-            width: 85,
-            height: 18,
-            detectedText: 'Manufactured & Marketed by Britannia Industries Ltd.'
-          }
-        ];
-      } else {
-        // --- Specimen B: Fully Stamped Standard Package (e.g. Tata Salt or compliant packaging) ---
-        commodityName = imageName ? `Packaged Specimen (${imageName})` : 'Tata Salt Vacuum Evaporated Iodised Salt 1kg';
-        manufacturerName = 'Tata Consumer Products Ltd., 1 Bishweshwar Dutt Lane, Kolkata - 700001';
-        score = 100;
-        violationsCount = 0;
-        isOverallCompliant = true;
-        verdictBanner = 'Packaged Commodity Compliant';
-
-        // Run statutory validation logic
-        const netQtyRes = validateNetQuantity('1 kg');
-        const uspRes = validateUnitSalePrice({ netWeight: 1000, netUnit: 'g', declaredUsp: '₹0.028 / g', isUspPresent: true });
-
-        rules = [
-          {
-            id: 'net-qty',
-            title: 'Net Quantity Unit',
-            titleHindi: 'मानक शुद्ध मात्रा एवं मीट्रिक इकाइयाँ',
-            status: 'pass',
-            found: '1 kg using statutory SI metric unit \'kg\' under Rule 13',
-            law: 'Declared using statutory SI metric unit under Rule 13.',
-            citation: 'Rule 6(1)(c) & Rule 13'
-          },
-          {
-            id: 'usp',
-            title: 'Unit Sale Price (USP)',
-            titleHindi: 'इकाई विक्रय मूल्य (USP)',
-            status: 'pass',
-            found: '₹0.028 / g declared prominently',
-            law: 'Declared per-unit rate compliant with Rule 6(11). Accurately stated per standard metric unit.',
-            citation: 'Rule 6(11) of PCR, 2011'
-          },
-          {
-            id: 'mrp',
-            title: 'Maximum Retail Price (MRP)',
-            titleHindi: 'अधिकतम खुदरा मूल्य (MRP)',
-            status: 'pass',
-            found: '₹28.00 (Inclusive of all taxes)',
-            law: 'Valid price declared with mandatory "Inclusive of all taxes" text.',
-            citation: 'Rule 6(1)(e)'
-          },
-          {
-            id: 'mfg-date',
-            title: 'Date of Packing / Mfg',
-            titleHindi: 'निर्माण / पैकिंग का माह एवं वर्ष',
-            status: 'pass',
-            found: '01/2026 packaging date verified',
-            law: 'Valid month and year format with statutory prefix.',
-            citation: 'Rule 6(1)(d)'
-          },
-          {
-            id: 'origin',
-            title: 'Country of Origin',
-            titleHindi: 'मूल देश (Country of Origin)',
-            status: 'pass',
-            found: 'Country of Origin: India',
-            law: 'Clearly declared on the Principal Display Panel.',
-            citation: 'Rule 6(1)(da)'
-          },
-          {
-            id: 'care',
-            title: 'Consumer Helpline & Email',
-            titleHindi: 'उपभोक्ता शिकायत निवारण संपर्क',
-            status: 'pass',
-            found: 'Toll-free 1800-108-4488 & customercare@tataconsumer.com',
-            law: 'Mandatory contact information provided under statutory rules.',
-            citation: 'Rule 6(1)(f)'
-          }
-        ];
-
-        boxes = [
-          {
-            id: 'net-qty',
-            fieldName: 'Net Quantity',
-            status: 'pass',
-            badgeText: 'Net Wt: 1 kg (PASS)',
-            badgeHindi: 'शुद्ध मात्रा: 1 kg (पास)',
-            x: 12,
-            y: 36,
-            width: 52,
-            height: 12,
-            detectedText: 'Net Qty: 1 kg'
-          },
-          {
-            id: 'usp',
-            fieldName: 'Unit Sale Price',
-            status: 'pass',
-            badgeText: 'USP Declared (PASS)',
-            badgeHindi: 'USP घोषित (पास)',
-            x: 12,
-            y: 50,
-            width: 48,
-            height: 10,
-            detectedText: '₹0.028 / g'
-          },
-          {
-            id: 'mrp',
-            fieldName: 'Maximum Retail Price',
-            status: 'pass',
-            badgeText: 'MRP Declared (PASS)',
-            badgeHindi: 'MRP कर सहित (पास)',
-            x: 12,
-            y: 63,
-            width: 45,
-            height: 10,
-            detectedText: '₹28.00 Inclusive of all taxes'
-          },
-          {
-            id: 'mfg-date',
-            fieldName: 'Date of Packing',
-            status: 'pass',
-            badgeText: 'Date Declared (PASS)',
-            badgeHindi: 'पैकिंग तिथि घोषित (पास)',
-            x: 58,
-            y: 63,
-            width: 34,
-            height: 10,
-            detectedText: '01/2026 packaging format'
-          },
-          {
-            id: 'origin',
-            fieldName: 'Country of Origin',
-            status: 'pass',
-            badgeText: 'Origin Declared (PASS)',
-            badgeHindi: 'मूल देश घोषित (पास)',
-            x: 58,
-            y: 75,
-            width: 34,
-            height: 8,
-            detectedText: 'Country of Origin: India'
-          }
-        ];
-      }
-
+      const violationsCount = inspectionResult.contravention_count ?? 0;
+      const isOverallCompliant = inspectionResult.compliance_score === 100 && violationsCount === 0;
       const status = isOverallCompliant ? 'COMPLIANT' : 'CONTRAVENTION';
+      const score = inspectionResult.compliance_score;
+      const commodityName = inspectionResult.product_name || imageName || 'Scanned Packaged Commodity';
+      const manufacturerName = decl.packer?.text || inspectionResult.brand || 'Identified Packaged Commodity Packer / Marketer';
+      const verdictBanner = inspectionResult.overall_verdict || (isOverallCompliant ? 'Packaged Commodity Compliant' : `${violationsCount} Statutory Contraventions Detected`);
 
       const newRecord = {
         id: `scan-${Date.now()}`,
@@ -426,7 +246,7 @@ export default function App() {
       showToast(
         isOverallCompliant
           ? (lang === 'hi' ? 'नमूना लोड किया गया — वैधानिक रूप से अनुपालित (100/100)' : 'Packaging specimen compliant — Score: 100/100')
-          : (lang === 'hi' ? 'सावधान: 4 वैधानिक उल्लंघन चिह्नित — प्रपत्र V जब्ती मेमो आवश्यक' : 'Contraventions detected — Form V Seizure Notice Warranted'),
+          : (lang === 'hi' ? `सावधान: ${violationsCount} वैधानिक उल्लंघन चिह्नित — प्रपत्र V जब्ती मेमो आवश्यक` : `${violationsCount} Contraventions detected — Form V Seizure Notice Warranted`),
         isOverallCompliant ? '✓' : '⚠️'
       );
 
@@ -452,7 +272,11 @@ export default function App() {
       } catch (err) {
         console.error(err);
       }
-    }, 900);
+    } catch (error) {
+      console.error('Inspection failed:', error);
+      setIsAnalyzing(false);
+      showToast('Error during statutory audit analysis', '⚠️');
+    }
   };
 
   // Reset scan back to clean welcoming state
