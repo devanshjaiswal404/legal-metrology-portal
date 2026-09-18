@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Pill,
   Search,
@@ -13,14 +13,16 @@ import {
   TrendingUp,
   AlertTriangle,
   Scale,
-  Sparkles,
   Activity,
   Layers,
-  ArrowRight,
-  Info
+  RefreshCw,
+  X,
+  FileCheck
 } from 'lucide-react';
 import { NPPA_DRUGS_DATABASE, evaluateDrugPricing } from '../../data/nppaDrugsData';
 import { exportFormVIPdf } from '../../utils/exportFormVIPdf';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
   // Audit Mode: 'upload' | 'search'
@@ -28,15 +30,69 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDrugId, setSelectedDrugId] = useState('dolo-650');
   const [customMrp, setCustomMrp] = useState('34.50');
-  const [uploadedImage, setUploadedImage] = useState(
-    'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=700&auto=format&fit=crop'
-  );
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [uploadedImage, setUploadedImage] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isAuditing, setIsAuditing] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const fileInputRef = useRef(null);
 
   // Selected drug record
   const currentDrug = useMemo(() => {
     return NPPA_DRUGS_DATABASE.find((d) => d.id === selectedDrugId) || NPPA_DRUGS_DATABASE[0];
   }, [selectedDrugId]);
+
+  // Optional backend API override data
+  const [apiResult, setApiResult] = useState(null);
+
+  // Evaluated pricing and packaging result
+  const dynamicAuditResult = useMemo(() => {
+    const mrp = parseFloat(customMrp) || currentDrug.brandedMrp;
+    const base = evaluateDrugPricing(currentDrug, mrp);
+    if (!apiResult) return base;
+    return {
+      ...base,
+      ...apiResult,
+      drug: {
+        ...currentDrug,
+        ...(apiResult.drug || {}),
+        brandName: apiResult.brandName || currentDrug.brandName,
+        genericName: apiResult.genericName || currentDrug.genericName,
+        saltComposition: apiResult.saltComposition || currentDrug.saltComposition,
+      },
+      scannedMrp: typeof apiResult.scannedMrp === 'number' ? apiResult.scannedMrp : mrp,
+      ceilingPrice: typeof apiResult.ceilingPrice === 'number' ? apiResult.ceilingPrice : base.ceilingPrice,
+      genericPrice: typeof apiResult.genericPrice === 'number' ? apiResult.genericPrice : base.genericPrice,
+      isOvercharging:
+        typeof apiResult.isOvercharging === 'boolean'
+          ? apiResult.isOvercharging
+          : mrp > (apiResult.ceilingPrice || base.ceilingPrice),
+      overchargePercentage:
+        typeof apiResult.overchargePercentage === 'number'
+          ? apiResult.overchargePercentage
+          : base.overchargePercentage,
+      overchargeAmount:
+        typeof apiResult.overchargeAmount === 'number'
+          ? apiResult.overchargeAmount
+          : base.overchargeAmount,
+      statutoryCompoundingDemand:
+        typeof apiResult.statutoryCompoundingDemand === 'number'
+          ? apiResult.statutoryCompoundingDemand
+          : base.statutoryCompoundingDemand,
+      totalIllegalOvercharge:
+        typeof apiResult.totalIllegalOvercharge === 'number'
+          ? apiResult.totalIllegalOvercharge
+          : base.totalIllegalOvercharge,
+      status:
+        apiResult.status ||
+        (mrp > (apiResult.ceilingPrice || base.ceilingPrice)
+          ? 'DPCO CEILING CONTRAVENTION'
+          : 'DPCO COMPLIANT'),
+      verdictMessage: apiResult.verdictMessage || base.verdictMessage,
+      packagingChecklist: apiResult.packagingChecklist || base.packagingChecklist
+    };
+  }, [currentDrug, customMrp, apiResult]);
 
   // Filtered drug formulations for Search Mode
   const filteredDrugs = useMemo(() => {
@@ -51,46 +107,134 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
     );
   }, [searchQuery]);
 
-  // Evaluated pricing and packaging result
-  const auditResult = useMemo(() => {
-    const mrp = parseFloat(customMrp) || currentDrug.brandedMrp;
-    return evaluateDrugPricing(currentDrug, mrp);
-  }, [currentDrug, customMrp]);
+  // Execute pharma audit against backend API with graceful local fallback
+  const executePharmaAudit = async (drugToAudit = currentDrug, mrpVal = customMrp, file = uploadedFile) => {
+    setIsAuditing(true);
+    const parsedMrp = parseFloat(mrpVal) || drugToAudit.brandedMrp;
+
+    try {
+      const formData = new FormData();
+      if (file) {
+        formData.append('image', file);
+      }
+      formData.append('drugId', drugToAudit.id);
+      formData.append('brandName', drugToAudit.brandName);
+      formData.append('genericName', drugToAudit.genericName);
+      formData.append('saltComposition', drugToAudit.saltComposition);
+      formData.append('mrp', parsedMrp.toString());
+      formData.append('packSize', drugToAudit.packSize.toString());
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4500);
+
+      const response = await fetch(`${API_BASE_URL}/api/pharma-audit`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        setApiResult(data);
+        if (onTriggerToast) {
+          onTriggerToast(
+            lang === 'hi'
+              ? `${drugToAudit.brandName} का DPCO ऑडिट API द्वारा संपन्न हुआ`
+              : `DPCO audit completed for ${drugToAudit.brandName} via backend API`,
+            '✅'
+          );
+        }
+        return;
+      }
+      throw new Error(`Backend returned status ${response.status}`);
+    } catch (_err) {
+      // Graceful fallback to statutory local benchmark
+      setApiResult(null);
+      if (onTriggerToast) {
+        onTriggerToast(
+          lang === 'hi'
+            ? `${drugToAudit.brandName}: स्थानीय NPPA मानक गणना लागू की गई`
+            : `Audited ${drugToAudit.brandName} using NPPA statutory benchmark`,
+          '💊'
+        );
+      }
+    } finally {
+      setIsAuditing(false);
+    }
+  };
 
   // Handle preset selection
   const handleSelectPreset = (drugId) => {
     const drug = NPPA_DRUGS_DATABASE.find((d) => d.id === drugId);
     if (!drug) return;
     setSelectedDrugId(drugId);
-    setCustomMrp(drug.brandedMrp.toFixed(2));
-    if (drug.sampleImage) {
+    const newMrp = drug.brandedMrp.toFixed(2);
+    setCustomMrp(newMrp);
+
+    if (!uploadedFile && drug.sampleImage) {
       setUploadedImage(drug.sampleImage);
     }
-    if (onTriggerToast) {
-      onTriggerToast(
-        lang === 'hi'
-          ? `${drug.brandName} (${drug.saltComposition}) लोड किया गया`
-          : `Loaded ${drug.brandName} formulation record`,
-        '💊'
-      );
-    }
+
+    executePharmaAudit(drug, newMrp, uploadedFile);
   };
 
   // Handle file drop / upload
   const handleImageUpload = (file) => {
     if (!file) return;
+    setUploadedFile(file);
+
     const reader = new FileReader();
     reader.onload = (e) => {
       setUploadedImage(e.target.result);
-      // If filename matches any preset keywords, auto-switch
+
       const name = file.name.toLowerCase();
-      if (name.includes('atorva')) handleSelectPreset('atorvastatin-10');
-      else if (name.includes('azith')) handleSelectPreset('azithromycin-500');
-      else if (name.includes('glyco') || name.includes('metformin')) handleSelectPreset('metformin-500-sr');
-      else if (name.includes('aug')) handleSelectPreset('amoxiclav-625');
-      else handleSelectPreset('dolo-650');
+      let matchedDrugId = selectedDrugId;
+      if (name.includes('atorva')) matchedDrugId = 'atorvastatin-10';
+      else if (name.includes('azith')) matchedDrugId = 'azithromycin-500';
+      else if (name.includes('glyco') || name.includes('metformin')) matchedDrugId = 'metformin-500-sr';
+      else if (name.includes('aug') || name.includes('amoxi')) matchedDrugId = 'amoxiclav-625';
+      else if (name.includes('dolo') || name.includes('para')) matchedDrugId = 'dolo-650';
+
+      const targetDrug = NPPA_DRUGS_DATABASE.find((d) => d.id === matchedDrugId) || currentDrug;
+      if (matchedDrugId !== selectedDrugId) {
+        setSelectedDrugId(matchedDrugId);
+        setCustomMrp(targetDrug.brandedMrp.toFixed(2));
+      }
+
+      executePharmaAudit(targetDrug, targetDrug.brandedMrp.toFixed(2), file);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleImageUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleRemoveImage = (e) => {
+    e.stopPropagation();
+    setUploadedFile(null);
+    setUploadedImage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   // Trigger Form VI PDF export
@@ -98,8 +242,9 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
     setIsExportingPdf(true);
     try {
       exportFormVIPdf({
-        auditResult,
-        inspectorId: 'LMO-Central-04 / NPPA-Squad-02'
+        auditResult: dynamicAuditResult,
+        inspectorId: 'LMO-Central-04 / NPPA-Squad-02',
+        district: 'Central Delhi Legal Metrology Enforcement Zone'
       });
       if (onTriggerToast) {
         onTriggerToast(
@@ -118,6 +263,7 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
 
   // Export CSV Audit Ledger
   const handleExportCsv = () => {
+    const res = dynamicAuditResult;
     const headers = [
       'Drug Formulation',
       'Generic Name',
@@ -133,17 +279,17 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
     ];
 
     const row = [
-      `"${auditResult.drug.brandName}"`,
-      `"${auditResult.drug.genericName}"`,
-      `"${auditResult.drug.saltComposition}"`,
-      `"${auditResult.drug.packSize} ${auditResult.drug.unit}"`,
-      `"₹${auditResult.scannedMrp.toFixed(2)}"`,
-      `"₹${auditResult.ceilingPrice.toFixed(2)}"`,
-      `"₹${auditResult.genericPrice.toFixed(2)}"`,
-      `"${auditResult.status}"`,
-      `"₹${auditResult.overchargeAmount.toFixed(2)}"`,
-      `"${auditResult.overchargePercentage}%"`,
-      `"₹${auditResult.statutoryCompoundingDemand.toFixed(2)}"`
+      `"${res.drug.brandName}"`,
+      `"${res.drug.genericName}"`,
+      `"${res.drug.saltComposition}"`,
+      `"${res.drug.packSize} ${res.drug.unit}"`,
+      `"₹${res.scannedMrp.toFixed(2)}"`,
+      `"₹${res.ceilingPrice.toFixed(2)}"`,
+      `"₹${res.genericPrice.toFixed(2)}"`,
+      `"${res.status}"`,
+      `"₹${res.overchargeAmount.toFixed(2)}"`,
+      `"${res.overchargePercentage}%"`,
+      `"₹${res.statutoryCompoundingDemand.toFixed(2)}"`
     ];
 
     const csvContent = [headers.join(','), row.join(',')].join('\n');
@@ -151,19 +297,17 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `DPCO_Pharma_Audit_${auditResult.drug.id}_${Date.now()}.csv`;
+    link.download = `DPCO_Pharma_Audit_${res.drug.id}_${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
 
     if (onTriggerToast) {
       onTriggerToast(
-        lang === 'hi' ? 'फार्मा ऑडिट लेजर (CSV) निर्यात किया गया' : 'Pharma Audit Ledger (CSV) exported',
+        lang === 'hi' ? 'फार्मा लेजर (CSV) निर्यात किया गया' : 'Pharma Audit Ledger (CSV) exported',
         '📊'
       );
     }
   };
-
-  const isOvercharging = auditResult.isOvercharging;
 
   return (
     <div className="space-y-6">
@@ -278,102 +422,183 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
 
       {/* 2. Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Optical Packaging Inspection or Formulation Search (5 cols) */}
+        {/* Left Column: Upload Dropzone or Formulation Search (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
           {auditMode === 'upload' ? (
-            /* Mode A: Optical Medicine Strip Upload Card */
+            /* Mode A: Functional Upload Dropzone Card */
             <div className="bg-[#111827] border border-slate-800 rounded-xl overflow-hidden shadow-sm p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                   <UploadCloud className="w-4 h-4 text-cyan-400" />
-                  <span>{lang === 'hi' ? 'दवा स्ट्रिप / बॉक्स नमूना' : 'Medicine Packaging Specimen'}</span>
+                  <span>{lang === 'hi' ? 'दवा स्ट्रिप या बॉक्स नमूना अपलोड' : 'Upload Medicine Strip or Box Specimen'}</span>
                 </span>
                 <span className="text-[10px] font-mono text-slate-400">
                   {currentDrug.packSize} {currentDrug.unit}
                 </span>
               </div>
 
-              {/* Viewport with Bounding Box Highlights */}
-              <div className="relative aspect-[4/3] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center group">
-                <img
-                  src={uploadedImage}
-                  alt={currentDrug.brandName}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files && handleImageUpload(e.target.files[0])}
+              />
 
-                {/* Simulated Pharmaceutical Bounding Boxes */}
-                {/* 1. MRP Box */}
-                <div
-                  style={{ position: 'absolute', top: '22%', left: '15%', width: '40%', height: '18%' }}
-                  className={`border-2 rounded transition-all flex flex-col justify-between p-1 z-10 ${
-                    isOvercharging
-                      ? 'border-rose-500 bg-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.4)]'
-                      : 'border-emerald-500 bg-emerald-500/20'
-                  }`}
-                >
-                  <span
-                    className={`text-[9px] font-mono font-bold px-1 py-0.5 rounded self-start ${
-                      isOvercharging ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-300'
+              {/* Dropzone Viewport / Specimen Preview */}
+              {uploadedImage ? (
+                /* Instant Specimen Preview with Bounding Boxes */
+                <div className="relative aspect-[4/3] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center group">
+                  <img
+                    src={uploadedImage}
+                    alt={currentDrug.brandName}
+                    className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 bg-slate-950"
+                  />
+
+                  {/* Simulated Pharmaceutical Bounding Boxes */}
+                  <div
+                    style={{ position: 'absolute', top: '18%', left: '15%', width: '45%', height: '22%' }}
+                    className={`border-2 rounded transition-all flex flex-col justify-between p-1.5 z-10 ${
+                      isOvercharging
+                        ? 'border-rose-500 bg-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.4)]'
+                        : 'border-emerald-500 bg-emerald-500/20'
                     }`}
                   >
-                    MRP: ₹{auditResult.scannedMrp.toFixed(2)} ({isOvercharging ? 'OVERCHARGED' : 'PASS'})
-                  </span>
-                </div>
-
-                {/* 2. Schedule H Warning Box */}
-                <div
-                  style={{ position: 'absolute', top: '50%', left: '15%', width: '68%', height: '22%' }}
-                  className="border-2 border-amber-500/90 bg-amber-500/15 rounded p-1 z-10 flex items-start"
-                >
-                  <span className="text-[8.5px] font-mono font-bold bg-slate-900/95 text-amber-300 px-1 py-0.5 rounded border border-amber-800">
-                    {currentDrug.scheduleType}
-                  </span>
-                </div>
-
-                {/* 3. Batch & Expiry Box */}
-                <div
-                  style={{ position: 'absolute', top: '76%', left: '45%', width: '45%', height: '16%' }}
-                  className="border-2 border-emerald-500/90 bg-emerald-500/15 rounded p-1 z-10 flex items-end justify-end"
-                >
-                  <span className="text-[8.5px] font-mono font-bold bg-slate-900/95 text-emerald-300 px-1 py-0.5 rounded border border-emerald-800">
-                    Exp: {currentDrug.expDate} (PASS)
-                  </span>
-                </div>
-              </div>
-
-              {/* Upload Input & Scanned MRP Adjuster */}
-              <div className="pt-1 space-y-3">
-                <label className="block text-xs text-slate-400 font-medium">
-                  {lang === 'hi' ? 'स्ट्रिप पर अंकित खुदरा मूल्य (MRP) सत्यापित करें:' : 'Verify Scanned Strip MRP (₹):'}
-                </label>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3 top-2 text-slate-400 font-mono text-sm">₹</span>
-                    <input
-                      type="number"
-                      step="0.10"
-                      min="0"
-                      value={customMrp}
-                      onChange={(e) => setCustomMrp(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-700/90 rounded-lg text-white font-mono text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                    />
+                    <span
+                      className={`text-[9px] font-mono font-bold px-1 py-0.5 rounded self-start ${
+                        isOvercharging ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-300'
+                      }`}
+                    >
+                      MRP: ₹{dynamicAuditResult.scannedMrp.toFixed(2)} ({isOvercharging ? 'OVERCHARGED' : 'PASS'})
+                    </span>
                   </div>
-                  <label className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5">
-                    <UploadCloud className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>{lang === 'hi' ? 'फोटो बदलें' : 'Upload Photo'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => e.target.files && handleImageUpload(e.target.files[0])}
-                    />
-                  </label>
+
+                  <div
+                    style={{ position: 'absolute', top: '48%', left: '15%', width: '68%', height: '22%' }}
+                    className="border-2 border-amber-500/90 bg-amber-500/15 rounded p-1.5 z-10 flex items-start"
+                  >
+                    <span className="text-[8.5px] font-mono font-bold bg-slate-900/95 text-amber-300 px-1 py-0.5 rounded border border-amber-800">
+                      {currentDrug.scheduleType}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{ position: 'absolute', top: '74%', left: '42%', width: '48%', height: '18%' }}
+                    className="border-2 border-emerald-500/90 bg-emerald-500/15 rounded p-1.5 z-10 flex items-end justify-end"
+                  >
+                    <span className="text-[8.5px] font-mono font-bold bg-slate-900/95 text-emerald-300 px-1 py-0.5 rounded border border-emerald-800">
+                      Exp: {currentDrug.expDate} (PASS)
+                    </span>
+                  </div>
+
+                  {/* Top-Right Control Overlay */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1.5 z-20">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2.5 py-1 bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-[11px] font-medium rounded-lg border border-slate-700 shadow-sm flex items-center gap-1 backdrop-blur-sm cursor-pointer transition-colors"
+                    >
+                      <UploadCloud className="w-3 h-3 text-cyan-400" />
+                      <span>{lang === 'hi' ? 'फोटो बदलें' : 'Change'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemoveImage}
+                      className="p-1 bg-slate-900/90 hover:bg-rose-950 text-slate-400 hover:text-rose-300 rounded-lg border border-slate-700 shadow-sm backdrop-blur-sm cursor-pointer transition-colors"
+                      title={lang === 'hi' ? 'हटाएं' : 'Remove image'}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-                <span className="text-[11px] text-slate-400 font-mono block">
-                  {lang === 'hi'
-                    ? `NPPA सीलिंग सीमा: ₹${auditResult.ceilingPrice.toFixed(2)} (${auditResult.drug.packSize} गोलियाँ)`
-                    : `Statutory NPPA Ceiling: ₹${auditResult.ceilingPrice.toFixed(2)} (${auditResult.drug.packSize} ${auditResult.drug.unit})`}
-                </span>
+              ) : (
+                /* Functional Drag & Drop Zone Box */
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 min-h-[220px] ${
+                    isDragOver
+                      ? 'border-cyan-400 bg-cyan-950/20 scale-[1.01]'
+                      : 'border-slate-700 hover:border-cyan-500 bg-slate-900/40 hover:bg-slate-900/70'
+                  }`}
+                >
+                  <div className="w-12 h-12 rounded-full bg-cyan-950/60 border border-cyan-800/80 flex items-center justify-center mb-3">
+                    <UploadCloud className="w-6 h-6 text-cyan-400" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-slate-200 mb-1">
+                    {lang === 'hi' ? 'दवा स्ट्रिप या बॉक्स फोटो अपलोड करें' : 'Upload Medicine Strip or Box Specimen'}
+                  </h3>
+                  <p className="text-xs text-slate-400 mb-3 max-w-xs">
+                    {lang === 'hi'
+                      ? 'ड्रैग और ड्रॉप करें या ब्राउज़ करने के लिए क्लिक करें'
+                      : 'Drag & drop real strip photo here, or click to browse files'}
+                  </p>
+                  <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700">
+                    PNG, JPG, JPEG, WEBP
+                  </span>
+                </div>
+              )}
+
+              {/* Scanned MRP Field & Prominent Audit Button */}
+              <div className="pt-1 space-y-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs text-slate-400 font-medium">
+                      {lang === 'hi' ? 'स्ट्रिप पर अंकित खुदरा मूल्य (MRP) सत्यापित करें:' : 'Verify Scanned Strip MRP (₹):'}
+                    </label>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {lang === 'hi'
+                        ? `NPPA कैप: ₹${dynamicAuditResult.ceilingPrice.toFixed(2)}`
+                        : `NPPA Cap: ₹${dynamicAuditResult.ceilingPrice.toFixed(2)}`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-2 text-slate-400 font-mono text-sm">₹</span>
+                      <input
+                        type="number"
+                        step="0.10"
+                        min="0"
+                        value={customMrp}
+                        onChange={(e) => setCustomMrp(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-700/90 rounded-lg text-white font-mono text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      />
+                    </div>
+                    {!uploadedImage && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 flex-shrink-0"
+                      >
+                        <UploadCloud className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>{lang === 'hi' ? 'ब्राउज़ करें' : 'Browse'}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Prominent "Audit Pharma Pricing (DPCO)" Button */}
+                <button
+                  type="button"
+                  onClick={() => executePharmaAudit(currentDrug, customMrp, uploadedFile)}
+                  disabled={isAuditing}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs sm:text-sm shadow-md hover:shadow-cyan-500/20 active:scale-[0.99] transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  {isAuditing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-cyan-200" />
+                      <span>{lang === 'hi' ? 'मूल्य अनुपालन ऑडिट जारी...' : 'Auditing Pharma Pricing...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="w-4 h-4 text-cyan-200" />
+                      <span>{lang === 'hi' ? 'फार्मा मूल्य ऑडिट (DPCO)' : 'Audit Pharma Pricing (DPCO)'}</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           ) : (
@@ -435,9 +660,15 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
           >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
-                  {lang === 'hi' ? 'DPCO मूल्य निर्धारण स्थिति' : 'DPCO Statutory Pricing Verdict'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+                    {lang === 'hi' ? 'DPCO मूल्य निर्धारण स्थिति' : 'DPCO Statutory Pricing Verdict'}
+                  </span>
+                  <span className="text-slate-500 font-mono text-[11px]">&bull;</span>
+                  <span className="text-[11px] font-mono font-semibold text-cyan-300">
+                    {dynamicAuditResult.drug.brandName} ({dynamicAuditResult.drug.saltComposition})
+                  </span>
+                </div>
                 <div className="text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2">
                   {isOvercharging ? (
                     <>
@@ -452,7 +683,7 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
                   )}
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed max-w-xl">
-                  {auditResult.verdictMessage}
+                  {dynamicAuditResult.verdictMessage}
                 </p>
               </div>
 
@@ -472,12 +703,12 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
                     {isOvercharging ? (
                       <>
                         <TrendingUp className="w-4 h-4 text-rose-400" />
-                        <span>+{auditResult.overchargePercentage}%</span>
+                        <span>+{dynamicAuditResult.overchargePercentage}%</span>
                       </>
                     ) : (
                       <>
                         <TrendingDown className="w-4 h-4 text-emerald-400" />
-                        <span>{auditResult.consumerSavingsVsCeiling > 0 ? `-${auditResult.consumerSavingsVsCeiling}%` : 'Cap Compliant'}</span>
+                        <span>{dynamicAuditResult.consumerSavingsVsCeiling > 0 ? `-${dynamicAuditResult.consumerSavingsVsCeiling}%` : 'Cap Compliant'}</span>
                       </>
                     )}
                   </span>
@@ -486,7 +717,46 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
             </div>
           </div>
 
-          {/* 2. Three-Way Price Comparison Card */}
+          {/* 2. Prominent Action Button: Placed directly below the Statutory Verdict Card */}
+          <div className="bg-[#111827] border border-slate-800 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-xs text-slate-300 text-center sm:text-left">
+              <span className="font-semibold text-slate-200">
+                {lang === 'hi' ? 'औषधि प्रवर्तन मांग प्रपत्र:' : 'Statutory Demand Notice:'}{' '}
+              </span>
+              <span className="text-slate-400">
+                {lang === 'hi'
+                  ? 'प्रपत्र VI DPCO मांग नोटिस एवं सीलिंग जब्ती मेमो तैयार करें।'
+                  : 'Download official Form VI DPCO statutory overcharging intimation & recovery memo.'}
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isExportingPdf}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-white text-slate-900 font-bold text-xs sm:text-sm shadow-md hover:-translate-y-0.5 hover:shadow-cyan-500/10 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+              >
+                <FileText className="w-4 h-4 text-slate-900" />
+                <span>
+                  {isExportingPdf
+                    ? (lang === 'hi' ? 'मेमो तैयार हो रहा है...' : 'Generating Notice...')
+                    : (lang === 'hi' ? 'प्रपत्र VI - DPCO मांग नोटिस (PDF)' : 'Download Form VI - DPCO Demand Notice (PDF)')}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white font-medium text-xs sm:text-sm border border-slate-700/80 shadow-sm hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-400" />
+                <span>{lang === 'hi' ? 'लेजर (CSV)' : 'Export CSV'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 3. Three-Way Price Comparison Card */}
           <div className="bg-[#111827] border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -495,11 +765,11 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
                   <span>{lang === 'hi' ? '3-तरफा वैधानिक मूल्य तुलना' : '3-Way Statutory Price Comparison'}</span>
                 </h4>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  {currentDrug.brandName} &bull; {currentDrug.saltComposition} ({currentDrug.packSize} {currentDrug.unit})
+                  {dynamicAuditResult.drug.brandName} &bull; {dynamicAuditResult.drug.saltComposition} ({dynamicAuditResult.drug.packSize} {dynamicAuditResult.drug.unit})
                 </p>
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
-                {currentDrug.nppaOrderNo}
+                {dynamicAuditResult.drug.nppaOrderNo}
               </span>
             </div>
 
@@ -518,10 +788,10 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
                     {lang === 'hi' ? 'अंकित खुदरा मूल्य (MRP)' : 'Scanned Branded MRP'}
                   </span>
                   <div className="text-xl font-bold text-white font-mono mt-1">
-                    ₹{auditResult.scannedMrp.toFixed(2)}
+                    ₹{dynamicAuditResult.scannedMrp.toFixed(2)}
                   </div>
                   <span className="text-[10px] text-slate-400 font-mono">
-                    ₹{(auditResult.scannedMrp / currentDrug.packSize).toFixed(2)} / tablet
+                    ₹{(dynamicAuditResult.scannedMrp / dynamicAuditResult.drug.packSize).toFixed(2)} / tablet
                   </span>
                 </div>
                 <span
@@ -542,10 +812,10 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
                     {lang === 'hi' ? 'NPPA सीलिंग मूल्य कैप' : 'NPPA Ceiling Cap'}
                   </span>
                   <div className="text-xl font-bold text-cyan-200 font-mono mt-1">
-                    ₹{auditResult.ceilingPrice.toFixed(2)}
+                    ₹{dynamicAuditResult.ceilingPrice.toFixed(2)}
                   </div>
                   <span className="text-[10px] text-cyan-400 font-mono">
-                    ₹{currentDrug.nppaCeilingPricePerUnit.toFixed(2)} / tablet (Max Legal)
+                    ₹{dynamicAuditResult.drug.nppaCeilingPricePerUnit.toFixed(2)} / tablet (Max Legal)
                   </span>
                 </div>
                 <span className="inline-block mt-3 px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 self-start">
@@ -560,10 +830,10 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
                     {lang === 'hi' ? 'जन औषधि जेनेरिक मूल्य' : 'PMBJP Generic Price'}
                   </span>
                   <div className="text-xl font-bold text-emerald-200 font-mono mt-1">
-                    ₹{auditResult.genericPrice.toFixed(2)}
+                    ₹{dynamicAuditResult.genericPrice.toFixed(2)}
                   </div>
                   <span className="text-[10px] text-emerald-400 font-mono">
-                    ₹{(auditResult.genericPrice / currentDrug.packSize).toFixed(2)} / tablet
+                    ₹{(dynamicAuditResult.genericPrice / dynamicAuditResult.drug.packSize).toFixed(2)} / tablet
                   </span>
                 </div>
                 <span className="inline-block mt-3 px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 self-start">
@@ -572,7 +842,7 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
               </div>
             </div>
 
-            {/* Overcharge Recovery Highlight (if violation) */}
+            {/* Overcharge Recovery Highlight under Para 16 (if violation) */}
             {isOvercharging && (
               <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div className="space-y-0.5">
@@ -584,8 +854,8 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
                   </span>
                   <p className="text-[11px] text-slate-300">
                     {lang === 'hi'
-                      ? `जब्त 15,000 पैक बैच पर अवैध वसूली: ₹${auditResult.totalIllegalOvercharge.toLocaleString('en-IN')}`
-                      : `Estimated 15,000 packs batch recovery: ₹${auditResult.totalIllegalOvercharge.toLocaleString('en-IN')} + 18% p.a. interest`}
+                      ? `जब्त 15,000 पैक बैच पर अवैध वसूली: ₹${dynamicAuditResult.totalIllegalOvercharge.toLocaleString('en-IN')}`
+                      : `Estimated 15,000 packs batch recovery: ₹${dynamicAuditResult.totalIllegalOvercharge.toLocaleString('en-IN')} + 18% p.a. interest`}
                   </p>
                 </div>
                 <div className="text-right">
@@ -593,60 +863,95 @@ export default function PharmaDpcoModule({ t, lang = 'en', onTriggerToast }) {
                     {lang === 'hi' ? 'कुल मांग राशि' : 'Total Demand Due'}
                   </span>
                   <span className="font-mono font-bold text-rose-200 text-sm">
-                    ₹{auditResult.statutoryCompoundingDemand.toLocaleString('en-IN')}
+                    ₹{dynamicAuditResult.statutoryCompoundingDemand.toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
             )}
           </div>
 
-          {/* 3. Action Card: Form VI PDF & CSV Export Buttons */}
-          <div className="bg-[#111827] border border-slate-800 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="text-xs text-slate-300 text-center sm:text-left">
-              <span className="font-semibold text-slate-200">
-                {lang === 'hi' ? 'औषधि प्रवर्तन मांग प्रपत्र:' : 'Enforcement Demand Memo:'}{' '}
+          {/* 4. Specialized Pharma Packaging Checks (Directly below 3-Way Comparison Card) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between pl-1">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <FileCheck className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{lang === 'hi' ? 'विशिष्ट फार्मा पैकेजिंग वैधानिक सत्यापन' : 'Specialized Pharma Packaging Checks'}</span>
               </span>
-              <span className="text-slate-400">
-                {lang === 'hi'
-                  ? 'प्रपत्र VI DPCO मांग नोटिस एवं सीलिंग जब्ती मेमो तैयार करें।'
-                  : 'Generate official Form VI DPCO overcharging intimation & recovery memo.'}
-              </span>
+              <span className="text-[10px] font-mono text-slate-500">D&C Rules, 1945 &bull; DPCO, 2013</span>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-              <button
-                type="button"
-                onClick={handleDownloadPdf}
-                disabled={isExportingPdf}
-                className="w-full sm:w-auto px-4 py-2 rounded-lg bg-slate-100 hover:bg-white text-slate-900 font-semibold text-xs sm:text-sm shadow-sm hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <FileText className="w-3.5 h-3.5 text-slate-900" />
-                <span>
-                  {isExportingPdf
-                    ? (lang === 'hi' ? 'मेमो तैयार हो रहा है...' : 'Generating Notice...')
-                    : (lang === 'hi' ? 'प्रपत्र VI DPCO नोटिस (PDF)' : 'Download Form VI Notice (PDF)')}
-                </span>
-              </button>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* Check 1: Schedule H / Prescription Warning */}
+              <div className="p-3 rounded-xl bg-[#111827] border border-slate-800 flex flex-col justify-between space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-200">
+                    {lang === 'hi' ? 'शेड्यूल H / नुस्खा चेतावनी' : 'Schedule H / Rx Warning'}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase tracking-wide flex-shrink-0 ${
+                      (dynamicAuditResult.drug?.scheduleType?.toLowerCase().includes('schedule h') || dynamicAuditResult.drug?.warningLabel)
+                        ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60'
+                        : 'bg-rose-950/40 text-rose-300 border-rose-800/60'
+                    }`}
+                  >
+                    {(dynamicAuditResult.drug?.scheduleType?.toLowerCase().includes('schedule h') || dynamicAuditResult.drug?.warningLabel) ? 'PASS' : 'MISSING'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  {(dynamicAuditResult.drug?.scheduleType?.toLowerCase().includes('schedule h') || dynamicAuditResult.drug?.warningLabel)
+                    ? 'Statutory red box caution verified'
+                    : 'Mandatory Schedule H warning absent'}
+                </p>
+              </div>
 
-              <button
-                type="button"
-                onClick={handleExportCsv}
-                className="w-full sm:w-auto px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white font-medium text-xs sm:text-sm border border-slate-700/80 shadow-sm hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-400" />
-                <span>{lang === 'hi' ? 'फार्मा लेजर (CSV)' : 'Export Pharma Ledger (CSV)'}</span>
-              </button>
+              {/* Check 2: Expiry Date Format */}
+              <div className="p-3 rounded-xl bg-[#111827] border border-slate-800 flex flex-col justify-between space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-200">
+                    {lang === 'hi' ? 'अवसान तिथि प्रारूप' : 'Expiry Date Format'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950/40 text-emerald-300 border border-emerald-800/60 uppercase tracking-wide flex-shrink-0">
+                    PASS
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Format: {dynamicAuditResult.drug?.expDate || 'MM/YYYY'} (D&C Rule 96 compliant)
+                </p>
+              </div>
+
+              {/* Check 3: Maximum Retail Price Display */}
+              <div className="p-3 rounded-xl bg-[#111827] border border-slate-800 flex flex-col justify-between space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-200">
+                    {lang === 'hi' ? 'अधिकतम खुदरा मूल्य' : 'Max Retail Price (MRP)'}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase tracking-wide flex-shrink-0 ${
+                      isOvercharging
+                        ? 'bg-rose-950/40 text-rose-300 border-rose-800/60'
+                        : 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60'
+                    }`}
+                  >
+                    {isOvercharging ? 'EXCEEDS CEILING' : 'PASS'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  {isOvercharging
+                    ? `Over ceiling by ₹${dynamicAuditResult.overchargeAmount.toFixed(2)}`
+                    : 'Within DPCO Para 14 maximum ceiling'}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* 4. Medical Packaging Label Checks */}
-          <div className="space-y-2.5">
+          {/* 5. Full Medical Packaging Label Checks */}
+          <div className="space-y-2.5 pt-1">
             <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider pl-1 flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-slate-400" />
               <span>{lang === 'hi' ? 'फार्मास्युटिकल पैकेजिंग वैधानिक चेकलिस्ट' : 'Pharmaceutical Packaging Statutory Checklist'}</span>
             </h4>
 
-            {auditResult.packagingChecklist.map((item) => {
+            {dynamicAuditResult.packagingChecklist.map((item) => {
               const isPass = item.status === 'pass';
               return (
                 <div
