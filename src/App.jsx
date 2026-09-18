@@ -4,7 +4,7 @@ import ScanZone from './components/ScanZone';
 import AuditResults from './components/AuditResults';
 import HistoryRepository from './components/HistoryRepository';
 import EcommerceAuditModule from './components/tabs/EcommerceAuditModule';
-import PharmaDpcoModule from './components/tabs/PharmaDpcoModule';
+import PharmaAudit from './components/PharmaAudit';
 import AnalyticsDashboard from './components/tabs/AnalyticsDashboard';
 import Footer from './components/Footer';
 import { translations } from './lib/translations';
@@ -404,7 +404,7 @@ export default function App() {
         {/* Tab 3: Pharma & DPCO Audit (NPPA Pricing Cap & Drug Packaging) */}
         {activeTab === 'pharma' && (
           <div key="pharma" className="animate-fade-slide">
-            <PharmaDpcoModule t={t} lang={lang} onTriggerToast={showToast} />
+            <PharmaAudit t={t} lang={lang} onTriggerToast={showToast} />
           </div>
         )}
 
