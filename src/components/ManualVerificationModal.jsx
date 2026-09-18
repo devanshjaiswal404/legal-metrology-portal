@@ -1,18 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  ShieldCheck,
   AlertTriangle,
   FileCheck,
   UserCheck,
   Edit3,
-  CheckCircle2,
-  AlertOctagon,
-  HelpCircle,
   X,
   Save,
-  RotateCcw,
-  Sparkles,
-  Info
+  RotateCcw
 } from 'lucide-react';
 
 const VERIFICATION_FIELDS = [
@@ -80,12 +74,11 @@ export default function ManualVerificationModal({
   onSaveVerification,
   lang = 'en'
 }) {
-  if (!isOpen || !auditData) return null;
-
-  const decl = auditData.declarations || {};
+  const decl = auditData?.declarations || {};
 
   // Extract initial values from declarations or rules
   const getInitialValue = (key) => {
+    if (!auditData) return '';
     if (key === 'product_name') return auditData.name || decl.commodity_name?.text || '';
     if (key === 'packer') return auditData.manufacturer || decl.packer?.text || '';
     if (key === 'packer_address') return decl.packer?.detail || decl.packer?.text || '';
@@ -133,6 +126,7 @@ export default function ManualVerificationModal({
 
   // Re-sync if auditData changes
   useEffect(() => {
+    if (!auditData) return;
     const state = {};
     VERIFICATION_FIELDS.forEach((f) => {
       const origVal = getInitialValue(f.key);
@@ -150,12 +144,14 @@ export default function ManualVerificationModal({
 
   // Overall officer decision
   const [officerDecision, setOfficerDecision] = useState(() => {
-    const isCompliant = auditData.overall_verdict === 'COMPLIANT' || (auditData.contraventionCount ?? 0) === 0;
+    const isCompliant = auditData?.overall_verdict === 'COMPLIANT' || (auditData?.contraventionCount ?? 0) === 0;
     return isCompliant ? 'CONFIRM_FINDINGS' : 'CONFIRM_NON_COMPLIANCE';
   });
 
   const [officerRemark, setOfficerRemark] = useState('');
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
+
+  if (!isOpen || !auditData) return null;
 
   const handleFieldTextChange = (key, value) => {
     setFieldsState((prev) => ({
@@ -219,10 +215,10 @@ export default function ManualVerificationModal({
     const reviewPayload = {
       isReviewed: true,
       reviewedAt: new Date().toISOString(),
-      reviewedBy: officer?.officerName || 'Enforcement Officer',
-      reviewedById: officer?.officerId || 'LMO-Central-04',
-      officerDesignation: officer?.designation || 'Senior Legal Metrology Officer',
-      officerDistrict: officer?.district || 'Central Enforcement Zone',
+      reviewedBy: officer?.officerName || officer?.name || 'Field Enforcement Officer',
+      reviewedById: officer?.officerId || 'LMO-2026-01',
+      officerDesignation: officer?.designation || 'Legal Metrology Officer',
+      officerDistrict: officer?.district || 'State Enforcement Zone',
       officerDecision,
       officerRemark: officerRemark.trim(),
       fields: fieldsState,

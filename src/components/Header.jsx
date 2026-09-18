@@ -5,10 +5,7 @@ import {
   Camera,
   Globe,
   BarChart3,
-  Pill,
-  LogOut,
-  UserCheck,
-  ShieldCheck
+  Pill
 } from 'lucide-react';
 
 export default function Header({
@@ -17,9 +14,6 @@ export default function Header({
   historyCount = 0,
   lang = 'en',
   onToggleLang,
-  officer = null,
-  onOpenLogin,
-  onLogout,
   t
 }) {
   const tabs = [
@@ -54,8 +48,8 @@ export default function Header({
           </div>
         </div>
 
-        {/* Right: Language Toggle + Logged-in Officer Profile + Actions */}
-        <div className="flex items-center gap-2.5 flex-wrap self-end md:self-auto">
+        {/* Right: Bilingual Language Toggle (Final Right-Aligned Control) */}
+        <div className="flex items-center self-end md:self-auto">
           {/* Seamless English / Hindi Language Switcher */}
           <div className="inline-flex items-center p-0.5 rounded-lg bg-slate-900 border border-slate-800">
             <button
@@ -81,46 +75,6 @@ export default function Header({
               <span>हिन्दी</span>
             </button>
           </div>
-
-          {/* Officer Status Profile Card */}
-          {officer ? (
-            <div className="flex items-center gap-1.5">
-              <div
-                onClick={onOpenLogin}
-                className="group inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-xs text-slate-300 font-mono transition-all cursor-pointer shadow-sm"
-                title={`${officer.designation} • ${officer.district}`}
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <div className="flex flex-col text-left">
-                  <div className="flex items-center gap-1.5 leading-tight">
-                    <span className="text-slate-100 font-semibold font-sans text-xs">{officer.officerName || officer.officerId}</span>
-                    <span className="text-[10.5px] text-cyan-400 font-mono">[{officer.officerId}]</span>
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-sans truncate max-w-[220px] hidden sm:inline leading-tight">
-                    {officer.designation} &bull; {officer.district}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={onLogout}
-                className="p-1.5 rounded-md bg-slate-900 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-900/50 transition-all cursor-pointer"
-                title={lang === 'hi' ? 'लॉगआउट करें' : 'Sign Out / Switch Officer'}
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={onOpenLogin}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all cursor-pointer shadow-sm"
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span>{lang === 'hi' ? 'अधिकारी लॉगिन' : 'Officer Sign In'}</span>
-            </button>
-          )}
         </div>
       </div>
 

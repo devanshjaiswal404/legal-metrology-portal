@@ -8,9 +8,7 @@ import {
   ShieldAlert,
   Loader2,
   Scale,
-  FileCheck2,
-  UserCheck,
-  Activity
+  FileCheck2
 } from 'lucide-react';
 import { exportFormVPdf } from '../utils/exportPdf';
 import { exportAuditDataCsv } from '../utils/exportCsv';
@@ -109,9 +107,27 @@ export default function AuditResults({
     try {
       const activeInspectorId =
         auditData.manualReview?.reviewedById ||
+        auditData.officer?.officerId ||
         officer?.officerId ||
         auditData.inspectorId ||
-        'LMO-Central-04';
+        'LMO-2026-01';
+
+      const activeMemoRef =
+        auditData.inspectionMetadata?.sampleId ||
+        auditData.memoRef ||
+        `LMO/2026/${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const activeCommodity =
+        auditData.name ||
+        auditData.inspectionMetadata?.category ||
+        auditData.inspectionMetadata?.commodityCategory ||
+        'Packaged Commodities';
+
+      const activeSeller =
+        auditData.inspectionMetadata?.trader ||
+        auditData.inspectionMetadata?.traderName ||
+        auditData.manufacturer ||
+        'Scanned Entity';
 
       exportFormVPdf({
         rules: (auditData.rules || []).map((r) => ({
@@ -127,9 +143,9 @@ export default function AuditResults({
         score: auditData.score || 0,
         minNumeralHeight: auditData.minNumeralHeight || '2.5 mm',
         inspectorId: activeInspectorId,
-        memoRef: auditData.memoRef || 'LMO/2026/8842',
-        commodity: auditData.name,
-        seller: auditData.manufacturer || 'Identified Packaged Commodity Packer / Marketer',
+        memoRef: activeMemoRef,
+        commodity: activeCommodity,
+        seller: activeSeller,
         overallVerdict: auditData.overall_verdict || auditData.verdict
       });
       if (onTriggerToast) {

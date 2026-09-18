@@ -7,12 +7,13 @@
 const SESSION_STORAGE_KEY = 'metrology_officer_session';
 
 export const DEFAULT_DEMO_OFFICER = {
-  officerId: 'LMO-DEL-2026-04',
-  officerName: 'Inspector D. Jaiswal',
-  designation: 'Senior Legal Metrology Officer',
-  district: 'Central Delhi Enforcement Zone',
+  officerId: 'LMO-2026-01',
+  officerName: 'Field Enforcement Officer',
+  name: 'Field Enforcement Officer',
+  designation: 'Legal Metrology Officer',
+  district: 'State Enforcement Zone',
   department: 'Department of Consumer Affairs, Legal Metrology Division',
-  badgeNumber: 'GOI-LMO-8842',
+  badgeNumber: 'GOI-LMO-2026',
   isDemo: true,
   loginTime: new Date().toISOString()
 };

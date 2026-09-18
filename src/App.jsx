@@ -8,16 +8,8 @@ import PharmaDpcoModule from './components/tabs/PharmaDpcoModule';
 import AnalyticsDashboard from './components/tabs/AnalyticsDashboard';
 import Footer from './components/Footer';
 import { translations } from './lib/translations';
-import { validateNetQuantity, validateUnitSalePrice } from './lib/statutoryValidation';
 import { analyzePackagingSpecimen } from './services/inspectionService';
 import { getCleanInspections } from './utils/storagePurge';
-import {
-  getStoredOfficerSession,
-  saveOfficerSession,
-  clearOfficerSession,
-  DEFAULT_DEMO_OFFICER
-} from './utils/officerSession';
-import OfficerLoginModal from './components/auth/OfficerLoginModal';
 
 export default function App() {
   // Language toggle: 'en' | 'hi'
@@ -52,58 +44,6 @@ export default function App() {
   };
 
   const t = translations[lang] || translations.en;
-
-  // Officer Profile & Enforcement Session State
-  const [officer, setOfficer] = useState(() => {
-    return getStoredOfficerSession() || DEFAULT_DEMO_OFFICER;
-  });
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-
-  // Pre-scan Statutory Inspection Metadata Setup
-  const [inspectionMetadata, setInspectionMetadata] = useState(() => ({
-    sampleId: `LMO/SMP/2026/${Math.floor(1000 + Math.random() * 9000)}`,
-    commodityCategory: 'Packaged Food & Snacks',
-    traderName: '',
-    inspectionType: 'Routine Market Surveillance',
-    location: officer?.district || 'Central District'
-  }));
-
-  // Synchronize officer session events across windows/tabs
-  useEffect(() => {
-    const handleSessionChange = (e) => {
-      setOfficer(e.detail || null);
-    };
-    window.addEventListener('metrology_officer_session_changed', handleSessionChange);
-    return () => window.removeEventListener('metrology_officer_session_changed', handleSessionChange);
-  }, []);
-
-  // Update default district in metadata when officer profile changes
-  useEffect(() => {
-    if (officer?.district) {
-      setInspectionMetadata((prev) => ({
-        ...prev,
-        location: prev.location === 'Central District' || !prev.location ? officer.district : prev.location
-      }));
-    }
-  }, [officer]);
-
-  const handleLoginSuccess = (officerData) => {
-    const saved = saveOfficerSession(officerData);
-    setOfficer(saved);
-    setIsLoginModalOpen(false);
-    showToast(
-      lang === 'hi'
-        ? `सत्यापित अधिकारी: ${saved.name} (${saved.officerId})`
-        : `Authenticated as ${saved.name} (${saved.officerId})`,
-      '🛡️'
-    );
-  };
-
-  const handleLogout = () => {
-    clearOfficerSession();
-    setOfficer(null);
-    showToast(lang === 'hi' ? 'अधिकारी सत्र समाप्त' : 'Officer session logged out', 'ℹ️');
-  };
 
   // Navigation active tab: 'scanner' | 'ecommerce' | 'repository' | 'analytics'
   const [activeTab, setActiveTab] = useState('scanner');
@@ -144,11 +84,9 @@ export default function App() {
   }, []);
 
   // User uploaded or captured a photo directly
-  const handleUserImageSelected = async (imageDataUrl, imageName, file = null, customMetadata = null) => {
+  const handleUserImageSelected = async (imageDataUrl, imageName, file = null) => {
     setIsAnalyzing(true);
     setAuditData({ image: imageDataUrl, name: imageName || 'Scanned Packaged Commodity', boxes: [] });
-
-    const activeMeta = customMetadata || inspectionMetadata;
 
     try {
       // Execute statutory inspection engine (Member 1 backend, Gemini multimodal, or deterministic fallback)
@@ -265,33 +203,35 @@ export default function App() {
       const status = isOverallCompliant ? 'COMPLIANT' : 'CONTRAVENTION';
       const score = inspectionResult.compliance_score;
       const commodityName = inspectionResult.product_name || imageName || 'Scanned Packaged Commodity';
-      const manufacturerName = decl.packer?.text || inspectionResult.brand || 'Identified Packaged Commodity Packer / Marketer';
       const verdictBanner = overall_verdict;
 
       const inspectionId = `INSP-${Date.now()}`;
-      const activeOfficer = officer || {
-        officerId: 'LMO-Central-04',
-        name: 'Inspector S. Sharma',
-        designation: 'Legal Metrology Officer',
-        district: 'Central District'
-      };
+      const defaultSampleId = `LMO/2026/${Math.floor(1000 + Math.random() * 9000)}`;
+      const defaultCategory = 'Packaged Commodities';
+      const defaultTrader = decl.packer?.text || inspectionResult.brand || 'Scanned Entity';
+      const defaultDistrict = 'State Enforcement Zone';
+      const defaultOfficer = 'Field Enforcement Officer';
 
       const finalMeta = {
-        sampleId: activeMeta?.sampleId || `LMO/SMP/2026/${Math.floor(1000 + Math.random() * 9000)}`,
-        commodityCategory: activeMeta?.commodityCategory || 'Packaged Food & Snacks',
-        traderName: activeMeta?.traderName || decl.packer?.text || manufacturerName,
-        inspectionType: activeMeta?.inspectionType || 'Routine Market Surveillance',
-        location: activeMeta?.location || activeOfficer.district || 'Central District'
+        sampleId: defaultSampleId,
+        category: defaultCategory,
+        commodityCategory: defaultCategory,
+        trader: defaultTrader,
+        traderName: defaultTrader,
+        inspectionType: 'Routine Market Surveillance',
+        district: defaultDistrict,
+        location: defaultDistrict,
+        officer: defaultOfficer
       };
 
       const newRecord = {
         id: inspectionId,
         inspectionId,
         officer: {
-          officerId: activeOfficer.officerId,
-          name: activeOfficer.name,
-          designation: activeOfficer.designation,
-          district: activeOfficer.district
+          officerId: 'LMO-2026-01',
+          name: defaultOfficer,
+          designation: 'Legal Metrology Officer',
+          district: defaultDistrict
         },
         inspectionMetadata: finalMeta,
         images: {
@@ -317,9 +257,10 @@ export default function App() {
         packageWidth,
         pdpArea,
         minNumeralHeight: '2.5 mm',
-        memoRef: finalMeta.sampleId,
-        inspectorId: activeOfficer.officerId,
-        manufacturer: finalMeta.traderName || manufacturerName,
+        memoRef: defaultSampleId,
+        inspectorId: 'LMO-2026-01',
+        inspectorName: defaultOfficer,
+        manufacturer: defaultTrader,
         boxes,
         rules
       };
@@ -348,7 +289,7 @@ export default function App() {
           contraventionCount: violationsCount,
           timestamp: `${dateStr}, ${timeStr} IST`,
           commodity: commodityName,
-          manufacturer: manufacturerName
+          manufacturer: defaultTrader
         };
         const updated = [historyItem, ...stored];
         localStorage.setItem('metrology_inspections', JSON.stringify(updated));
@@ -406,9 +347,6 @@ export default function App() {
         historyCount={historyCount}
         lang={lang}
         onToggleLang={handleToggleLang}
-        officer={officer}
-        onOpenLogin={() => setIsLoginModalOpen(true)}
-        onLogout={handleLogout}
         t={t}
       />
 
@@ -433,8 +371,6 @@ export default function App() {
                 hoveredBoxId={hoveredBoxId}
                 onHoverBox={setHoveredBoxId}
                 isAnalyzing={isAnalyzing}
-                metadata={inspectionMetadata}
-                onMetadataChange={setInspectionMetadata}
                 t={t.scanner}
                 lang={lang}
               />
@@ -449,7 +385,6 @@ export default function App() {
                 hoveredBoxId={hoveredBoxId}
                 onHoverBox={setHoveredBoxId}
                 isAnalyzing={isAnalyzing}
-                officer={officer}
                 onUpdateAuditData={handleUpdateAuditData}
                 t={t.scanner}
                 lang={lang}
@@ -500,15 +435,6 @@ export default function App() {
 
       {/* Clean Minimal Footer */}
       <Footer t={t} lang={lang} />
-
-      {/* Officer Authentication & Enforcement Session Modal */}
-      <OfficerLoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onLoginSuccess={handleLoginSuccess}
-        currentOfficer={officer}
-        lang={lang}
-      />
     </div>
   );
 }
