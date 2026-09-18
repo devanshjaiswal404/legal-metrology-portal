@@ -12,7 +12,7 @@ export default function LiveInspectionTab() {
   const [statutoryRules] = useState(DEFAULT_STATUTORY_RULES);
 
   // Handler when officer triggers "Run Statutory Audit" from InputScanner
-  const handleRunAudit = (auditPayload) => {
+  const handleRunAudit = async (auditPayload) => {
     setIsAuditing(true);
     setActiveAuditData(auditPayload);
 
@@ -20,11 +20,40 @@ export default function LiveInspectionTab() {
       setMinNumeralHeight(auditPayload.prescribedFont);
     }
 
-    // Simulate statutory OCR & font measurement processing
-    setTimeout(() => {
-      setIsAuditing(false);
-      // Recompute or refresh scorecard with calibrated PDP measurements
-      setScore(68);
+    try {
+      let fileToUpload = auditPayload.metadata?.file;
+      if (!fileToUpload && auditPayload.image) {
+        const arr = auditPayload.image.split(',');
+        const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        fileToUpload = new File([u8arr], auditPayload.metadata?.name || 'specimen.jpg', { type: mime });
+      }
+
+      const formData = new FormData();
+      formData.append('image', fileToUpload);
+
+      const response = await fetch('http://localhost:5000/api/audit', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const auditResult = await response.json();
+      console.log("Live Audit Result from Flask:", auditResult);
+
+      const liveScore = auditResult.compliance_score !== undefined
+        ? auditResult.compliance_score
+        : (auditResult.score !== undefined ? auditResult.score : 0);
+
+      setScore(liveScore);
 
       // Save new completed audit to localStorage 'metrology_inspections'
       try {
@@ -37,21 +66,31 @@ export default function LiveInspectionTab() {
           memoRef: `LMO/2026/${Math.floor(1000 + Math.random() * 9000)}`,
           timestamp: `${dateStr}, ${timeStr} IST`,
           isoDate: now.toISOString(),
-          commodity: auditPayload.metadata?.name ? `Packaged Commodity (${auditPayload.metadata.name})` : 'Fortified Chakki Fresh Atta 5.0kg',
-          manufacturer: 'M/s Hindustan Agro Foods Ltd., Sector 62, Noida (U.P.) - 201309',
-          verdict: 'NON-COMPLIANT',
-          score: 68,
+          commodity: auditResult.product_name || (auditPayload.metadata?.name ? `Packaged Commodity (${auditPayload.metadata.name})` : 'Scanned Packaged Commodity'),
+          manufacturer: auditResult.brand || 'Scanned Manufacturer Entity',
+          verdict: auditResult.overall_verdict || (liveScore === 100 ? 'COMPLIANT' : 'NON-COMPLIANT'),
+          score: liveScore,
+          compliance_score: liveScore,
           packageWidth: auditPayload.packageWidth || 10.0,
           pdpArea: auditPayload.pdpArea || 150.0,
           minNumeralHeight: auditPayload.prescribedFont || '2.5 mm',
           inspectorId: 'LMO-Central-04',
-          rules: statutoryRules
+          rules: statutoryRules,
+          declarations: auditResult.declarations || {},
+          violations: auditResult.violations || [],
+          bounding_boxes: auditResult.bounding_boxes || []
         };
         localStorage.setItem('metrology_inspections', JSON.stringify([newRecord, ...existing]));
+        window.dispatchEvent(new Event('metrology_history_updated'));
       } catch (err) {
         console.error('Error persisting inspection to repository:', err);
       }
-    }, 1800);
+    } catch (error) {
+      console.error("Backend connection failed:", error);
+      alert("Could not reach http://localhost:5000/api/audit. Make sure python app.py is running!");
+    } finally {
+      setIsAuditing(false);
+    }
   };
 
   return (

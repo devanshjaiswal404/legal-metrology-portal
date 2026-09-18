@@ -5,7 +5,6 @@
  * and the Legal Metrology (Packaged Commodities) Rules, 2011 (as amended).
  */
 
-import { validateNetQuantity, validateUnitSalePrice } from '../lib/statutoryValidation';
 
 // Environment-based Backend API Base URL configuration with sensible local fallback
 export const API_BASE_URL = (
@@ -351,17 +350,19 @@ function normalizeDeclItem(declItem, defaultRule, defaultDetail, defaultStatus =
  * Normalizes Member 1's backend response from http://localhost:5000/api/audit
  */
 export function normalizeBackendResponse(data, metadata = {}) {
-  // 1. Map compliance_score
+  // 1. Map compliance_score (Never default to 100)
   const rawScore = Number(data.compliance_score ?? data.score);
-  const complianceScore = !isNaN(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 100;
+  const complianceScore = !isNaN(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 0;
 
   // 2. Map overall_verdict ('COMPLIANT' vs 'NON-COMPLIANT')
   const rawVerdict = String(data.overall_verdict || data.verdict || '').toUpperCase().trim();
   let overallVerdict = 'NON-COMPLIANT';
-  if (rawVerdict === 'COMPLIANT' || (rawVerdict !== 'NON-COMPLIANT' && complianceScore === 100)) {
+  if (rawVerdict === 'COMPLIANT') {
     overallVerdict = 'COMPLIANT';
-  } else {
+  } else if (rawVerdict === 'NON-COMPLIANT') {
     overallVerdict = 'NON-COMPLIANT';
+  } else {
+    overallVerdict = complianceScore === 100 ? 'COMPLIANT' : 'NON-COMPLIANT';
   }
 
   // 3. Format violations safely without crashing: display `${v.rule}: ${v.issue}`
@@ -532,157 +533,29 @@ export async function analyzePackagingSpecimen(imageFileOrBase64, metadata = {})
     error: null
   };
 
-  // Step 2: Attempt POST to Member 1's backend endpoint at `${API_BASE_URL}/api/audit`
-  try {
-    const formData = new FormData();
-    formData.append('image', fileToSend);
+  // Step 2: Directly POST to Python Flask backend endpoint at `${API_BASE_URL}/api/audit`
+  const formData = new FormData();
+  formData.append('image', fileToSend);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500); // 4.5s timeout
+  const response = await fetch(`${API_BASE_URL}/api/audit`, {
+    method: 'POST',
+    body: formData,
+  });
 
-    const response = await fetch(`${API_BASE_URL}/api/audit`, {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      let backendData = null;
-      try {
-        backendData = await response.json();
-      } catch (parseErr) {
-        apiTelemetry.error = {
-          code: API_ERROR_CODES.INVALID_RESPONSE,
-          message: `Backend returned invalid JSON response (${parseErr.message})`,
-          status: response.status
-        };
-      }
-
-      if (backendData && (backendData.declarations || backendData.compliance_score !== undefined || backendData.score !== undefined)) {
-        apiTelemetry.isSuccess = true;
-        apiTelemetry.status = response.status;
-        const normalized = normalizeBackendResponse(backendData, metadata);
-        return {
-          ...normalized,
-          apiTelemetry
-        };
-      } else if (backendData) {
-        apiTelemetry.error = {
-          code: API_ERROR_CODES.INVALID_RESPONSE,
-          message: 'Backend returned incomplete response missing mandatory statutory declarations schema.',
-          status: response.status,
-          raw: backendData
-        };
-      }
-    } else {
-      apiTelemetry.error = {
-        code: API_ERROR_CODES.REQUEST_FAILED,
-        message: `Backend request failed with HTTP ${response.status} (${response.statusText || 'Error'})`,
-        status: response.status
-      };
-      console.warn(`Member 1 backend returned HTTP ${response.status}:`, apiTelemetry.error.message);
-    }
-  } catch (err) {
-    const isTimeout = err.name === 'AbortError';
-    apiTelemetry.error = {
-      code: API_ERROR_CODES.BACKEND_UNAVAILABLE,
-      message: isTimeout
-        ? `Backend endpoint at ${API_BASE_URL}/api/audit timed out after 4500ms.`
-        : `Backend service at ${API_BASE_URL} is unreachable or offline (${err.message}).`,
-      originalError: err.message
-    };
-    console.warn('Member 1 backend offline or unreachable:', apiTelemetry.error.message);
+  if (!response.ok) {
+    throw new Error(`Could not reach ${API_BASE_URL}/api/audit. HTTP ${response.status}`);
   }
 
-  // Step 3: Fallback A - Gemini multimodal inspection if VITE_GEMINI_API_KEY is configured
-  const geminiApiKey =
-    (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) ||
-    (typeof process !== 'undefined' && process.env && process.env.VITE_GEMINI_API_KEY) ||
-    '';
+  const backendData = await response.json();
+  console.log("Live Audit Result from Flask:", backendData);
 
-  if (geminiApiKey) {
-    try {
-      let base64Data = '';
-      let mimeType = 'image/jpeg';
-
-      if (typeof imageFileOrBase64 === 'string' && imageFileOrBase64.startsWith('data:')) {
-        const match = imageFileOrBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-        if (match) {
-          mimeType = match[1];
-          base64Data = match[2];
-        }
-      } else if (fileToSend) {
-        mimeType = fileToSend.type || 'image/jpeg';
-        const buffer = await fileToSend.arrayBuffer();
-        base64Data = btoa(
-          new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-        );
-      }
-
-      if (base64Data) {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
-
-        const payload = {
-          contents: [
-            {
-              parts: [
-                { text: STATUTORY_SYSTEM_PROMPT },
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: base64Data
-                  }
-                }
-              ]
-            }
-          ],
-          generationConfig: {
-            response_mime_type: 'application/json',
-            temperature: 0.1
-          }
-        };
-
-        const geminiRes = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-
-        if (geminiRes.ok) {
-          const resJson = await geminiRes.json();
-          const candidateText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (candidateText) {
-            const parsed = JSON.parse(candidateText);
-            if (parsed && parsed.declarations) {
-              const normalized = normalizeBackendResponse(parsed, metadata);
-              return {
-                ...normalized,
-                apiTelemetry: {
-                  ...apiTelemetry,
-                  isFallback: true,
-                  source: 'GEMINI_MULTIMODAL',
-                  fallbackReason: apiTelemetry.error?.message || 'Backend offline'
-                }
-              };
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Gemini multimodal inspection fallback failed:', err);
-    }
-  }
-
-  // Step 4: Fallback B - Deterministic dynamic specimen analysis
-  const fallbackResult = resolveFallbackSpecimen(imageFileOrBase64, metadata);
+  const normalized = normalizeBackendResponse(backendData, metadata);
   return {
-    ...fallbackResult,
+    ...normalized,
     apiTelemetry: {
       ...apiTelemetry,
-      isFallback: true,
-      source: 'CLIENT_HEURISTIC',
-      fallbackReason: apiTelemetry.error?.message || 'Backend service unreachable'
+      isSuccess: true,
+      status: response.status
     }
   };
 }

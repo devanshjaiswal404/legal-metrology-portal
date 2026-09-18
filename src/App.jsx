@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
-import ScanZone from './components/ScanZone';
-import AuditResults from './components/AuditResults';
 import HistoryRepository from './components/HistoryRepository';
 import EcommerceAuditModule from './components/tabs/EcommerceAuditModule';
 import PharmaAudit from './components/PharmaAudit';
 import AnalyticsDashboard from './components/tabs/AnalyticsDashboard';
 import Footer from './components/Footer';
+import PackageScanner from './components/PackageScanner';
 import { translations } from './lib/translations';
 import { analyzePackagingSpecimen } from './services/inspectionService';
 import { getCleanInspections } from './utils/storagePurge';
@@ -298,9 +297,11 @@ export default function App() {
         console.error(err);
       }
     } catch (error) {
-      console.error('Inspection failed:', error);
+      console.error("Backend connection failed:", error);
+      alert("Could not reach http://localhost:5000/api/audit. Make sure python app.py is running!");
+      setAuditData(null);
+    } finally {
       setIsAnalyzing(false);
-      showToast('Error during statutory audit analysis', '⚠️');
     }
   };
 
@@ -354,44 +355,26 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Tab 1: Physical Package Scanner (Clean 2-column production layout) */}
         {activeTab === 'scanner' && (
-          <div key="scanner" className="animate-fade-slide grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-            {/* Left Column (Scan Zone): 5 cols on lg */}
-            <section className="lg:col-span-5 space-y-4">
-              <ScanZone
-                imageSrc={auditData?.image}
-                boxes={auditData?.boxes || []}
-                packageWidth={packageWidth}
-                pdpArea={pdpArea}
-                onPackageWidthChange={(w) => setPackageWidth(w)}
-                onPdpAreaChange={(a) => setPdpArea(a)}
-                onImageSelected={handleUserImageSelected}
-                onResetImage={handleResetImage}
-                selectedBoxId={selectedBoxId}
-                onSelectBox={(id) => setSelectedBoxId(id)}
-                hoveredBoxId={hoveredBoxId}
-                onHoverBox={setHoveredBoxId}
-                isAnalyzing={isAnalyzing}
-                t={t.scanner}
-                lang={lang}
-              />
-            </section>
-
-            {/* Right Column (Audit Results & Rule Cards): 7 cols on lg */}
-            <section className="lg:col-span-7">
-              <AuditResults
-                auditData={auditData}
-                selectedRuleId={selectedBoxId}
-                onSelectRule={(id) => setSelectedBoxId(id)}
-                hoveredBoxId={hoveredBoxId}
-                onHoverBox={setHoveredBoxId}
-                isAnalyzing={isAnalyzing}
-                onUpdateAuditData={handleUpdateAuditData}
-                t={t.scanner}
-                lang={lang}
-                onTriggerToast={showToast}
-              />
-            </section>
-          </div>
+          <PackageScanner
+            auditData={auditData}
+            setAuditData={setAuditData}
+            selectedBoxId={selectedBoxId}
+            setSelectedBoxId={setSelectedBoxId}
+            hoveredBoxId={hoveredBoxId}
+            setHoveredBoxId={setHoveredBoxId}
+            packageWidth={packageWidth}
+            setPackageWidth={setPackageWidth}
+            pdpArea={pdpArea}
+            setPdpArea={setPdpArea}
+            isAnalyzing={isAnalyzing}
+            setIsAnalyzing={setIsAnalyzing}
+            onUpdateAuditData={handleUpdateAuditData}
+            onResetImage={handleResetImage}
+            t={t}
+            lang={lang}
+            showToast={showToast}
+            onImageSelected={handleUserImageSelected}
+          />
         )}
 
         {/* Tab 2: E-Commerce Listing Audit (Rule 6(10) Crawler & Exemption Note) */}
